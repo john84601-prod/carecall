@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CareCall</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.63A2 2 0 012 .82h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+    </svg>
+    <span>CareCall</span>
+  </div>
+  <div class="header-right">
+    <span class="status-dot" id="statusDot" title="Server status"></span>
+  </div>
+</header>
+
+<nav>
+  <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="nav-btn" data-tab="clients">Clients</button>
+  <button class="nav-btn" data-tab="schedules">Schedules</button>
+  <button class="nav-btn" data-tab="audio">Audio Files</button>
+  <button class="nav-btn" data-tab="settings">Settings</button>
+</nav>
+
+<main>
+
+  <!-- ── Dashboard ─────────────────────────────────────────────────── -->
+  <section id="tab-dashboard" class="tab active">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-num" id="statClients">—</div>
+        <div class="stat-label">Active Clients</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="statSchedules">—</div>
+        <div class="stat-label">Active Schedules</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="statToday">—</div>
+        <div class="stat-label">Calls Today</div>
+      </div>
+      <div class="stat-card alert" id="sessionCard" style="display:none">
+        <div class="stat-num" id="statSessions">—</div>
+        <div class="stat-label">Active Wellness Sessions</div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h2>Recent Calls</h2>
+      <button class="btn-ghost" onclick="loadDashboard()">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Client</th><th>Type</th><th>Attempt</th><th>Status</th>
+        </tr></thead>
+        <tbody id="logTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Clients ───────────────────────────────────────────────────── -->
+  <section id="tab-clients" class="tab">
+    <div class="section-head">
+      <h2>Clients</h2>
+      <button class="btn-primary" onclick="showClientModal()">+ Add Client</button>
+    </div>
+    <div id="clientsContainer"></div>
+  </section>
+
+  <!-- ── Schedules ─────────────────────────────────────────────────── -->
+  <section id="tab-schedules" class="tab">
+    <div class="section-head">
+      <h2>Call Schedules</h2>
+      <button class="btn-primary" onclick="showScheduleModal()">+ Add Schedule</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>Client</th><th>Type</th><th>Time</th><th>Days</th><th>Active</th><th></th>
+        </tr></thead>
+        <tbody id="schedulesTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Audio Files ────────────────────────────────────────────────── -->
+  <section id="tab-audio" class="tab">
+    <div class="section-head"><h2>Audio Files (.mp3)</h2></div>
+    <div class="upload-zone" id="uploadZone">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.5">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+      </svg>
+      <p>Drag &amp; drop .mp3 files here, or <label class="upload-link" for="fileInput">browse</label></p>
+      <input type="file" id="fileInput" accept=".mp3" multiple style="display:none">
+    </div>
+    <div id="audioList" class="audio-list"></div>
+  </section>
+
+  <!-- ── Settings ──────────────────────────────────────────────────── -->
+  <section id="tab-settings" class="tab">
+    <div class="settings-panel">
+      <h2>Configuration</h2>
+      <div class="info-box">
+        Twilio credentials are configured in the <code>.env</code> file on the server.
+        Restart CareCall after making changes.
+      </div>
+      <div id="settingsInfo"></div>
+
+      <h3>Test Call</h3>
+      <p>Send a test call to verify Twilio is configured correctly.</p>
+      <div class="row gap-sm">
+        <input type="tel" id="testPhone" placeholder="+15551234567" class="flex-1">
+        <button class="btn-primary" onclick="sendTestCall()">Call Now</button>
+      </div>
+      <div id="testResult" style="margin-top:.75rem"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Client Modal ───────────────────────────────────────────────────── -->
+<div class="overlay" id="clientOverlay" style="display:none" onclick="closeOverlay('clientOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3 id="clientModalTitle">Add Client</h3>
+      <button class="close-btn" onclick="closeOverlay('clientOverlay')">✕</button>
+    </div>
+    <form id="clientForm" onsubmit="saveClient(event)">
+      <input type="hidden" id="clientId">
+      <div class="form-group">
+        <label>Full Name *</label>
+        <input type="text" id="clientName" required>
+      </div>
+      <div class="form-group">
+        <label>Phone Number * <span class="hint">(E.164 format: +15551234567)</span></label>
+        <input type="tel" id="clientPhone" placeholder="+15551234567" required>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="clientNotes" rows="3"></textarea>
+      </div>
+      <div class="form-group checkbox-row">
+        <label><input type="checkbox" id="clientActive" checked> Active</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-ghost" onclick="closeOverlay('clientOverlay')">Cancel</button>
+        <button type="submit" class="btn-primary">Save Client</button>
+      </div>
+    </form>
+    <!-- Emergency contacts panel (visible when editing) -->
+    <div id="ecPanel" style="display:none">
+      <hr style="margin:1.5rem 0">
+      <div class="section-head">
+        <h4>Emergency Contacts <span class="hint">(called in priority order if client doesn't respond)</span></h4>
+        <button class="btn-ghost btn-sm" onclick="showContactModal()">+ Add Contact</button>
+      </div>
+      <div id="ecList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Emergency Contact Modal ───────────────────────────────────────── -->
+<div class="overlay" id="contactOverlay" style="display:none" onclick="closeOverlay('contactOverlay')">
+  <div class="modal modal-sm" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3 id="contactModalTitle">Add Emergency Contact</h3>
+      <button class="close-btn" onclick="closeOverlay('contactOverlay')">✕</button>
+    </div>
+    <form id="contactForm" onsubmit="saveContact(event)">
+      <input type="hidden" id="contactId">
+      <div class="form-group">
+        <label>Name *</label>
+        <input type="text" id="contactName" required>
+      </div>
+      <div class="form-group">
+        <label>Phone * <span class="hint">(E.164 format)</span></label>
+        <input type="tel" id="contactPhone" placeholder="+15551234567" required>
+      </div>
+      <div class="form-group">
+        <label>Relationship</label>
+        <input type="text" id="contactRelationship" placeholder="e.g. Daughter, Neighbor">
+      </div>
+      <div class="form-group">
+        <label>Priority <span class="hint">(1 = first to call)</span></label>
+        <input type="number" id="contactPriority" value="1" min="1" max="99">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-ghost" onclick="closeOverlay('contactOverlay')">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Schedule Modal ────────────────────────────────────────────────── -->
+<div class="overlay" id="scheduleOverlay" style="display:none" onclick="closeOverlay('scheduleOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3 id="scheduleModalTitle">Add Schedule</h3>
+      <button class="close-btn" onclick="closeOverlay('scheduleOverlay')">✕</button>
+    </div>
+    <form id="scheduleForm" onsubmit="saveSchedule(event)">
+      <input type="hidden" id="scheduleId">
+      <div class="form-group">
+        <label>Schedule Name</label>
+        <input type="text" id="scheduleName" placeholder="e.g. Morning Medication Reminder">
+      </div>
+      <div class="form-group">
+        <label>Client *</label>
+        <select id="scheduleClient" required></select>
+      </div>
+      <div class="form-group">
+        <label>Call Type *</label>
+        <select id="scheduleType" onchange="toggleScheduleFields()">
+          <option value="reminder">Reminder — plays an .mp3 file</option>
+          <option value="wellness">Wellness Check — requires key press to confirm OK</option>
+        </select>
+      </div>
+      <div class="row gap-md">
+        <div class="form-group flex-1">
+          <label>Time *</label>
+          <input type="time" id="scheduleTime" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Days of Week</label>
+        <div class="day-picker" id="dayPicker">
+          <label><input type="checkbox" value="0" checked> Mon</label>
+          <label><input type="checkbox" value="1" checked> Tue</label>
+          <label><input type="checkbox" value="2" checked> Wed</label>
+          <label><input type="checkbox" value="3" checked> Thu</label>
+          <label><input type="checkbox" value="4" checked> Fri</label>
+          <label><input type="checkbox" value="5" checked> Sat</label>
+          <label><input type="checkbox" value="6" checked> Sun</label>
+        </div>
+      </div>
+
+      <!-- Reminder-only fields -->
+      <div id="reminderFields">
+        <div class="form-group">
+          <label>Audio File (.mp3)</label>
+          <select id="scheduleMp3">
+            <option value="">— none selected —</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Wellness-only fields -->
+      <div id="wellnessFields" style="display:none">
+        <div class="row gap-md">
+          <div class="form-group flex-1">
+            <label>Required Key Press</label>
+            <input type="text" id="scheduleKey" value="1" maxlength="1" pattern="[0-9*#]">
+          </div>
+          <div class="form-group flex-1">
+            <label>Max Attempts</label>
+            <input type="number" id="scheduleMaxAttempts" value="3" min="1" max="20">
+          </div>
+          <div class="form-group flex-1">
+            <label>Minutes Between Attempts</label>
+            <input type="number" id="scheduleInterval" value="10" min="1">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group checkbox-row">
+        <label><input type="checkbox" id="scheduleActive" checked> Active</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-ghost" onclick="closeOverlay('scheduleOverlay')">Cancel</button>
+        <button type="submit" class="btn-primary">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

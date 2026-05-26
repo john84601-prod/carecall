@@ -1,0 +1,19 @@
+[Unit]
+Description=CareCall Automated Calling System
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=carecall_user
+WorkingDirectory=/opt/carecall
+ExecStart=/opt/carecall/venv/bin/python run.py
+EnvironmentFile=/opt/carecall/.env
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=carecall
+
+[Install]
+WantedBy=multi-user.target
