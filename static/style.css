@@ -402,7 +402,8 @@ tr:hover td { background: #f8fafc; }
   width: 100%;
   max-width: 540px;
 }
-.modal-sm { max-width: 420px; }
+.modal-sm   { max-width: 420px; }
+.modal-wide { max-width: 680px; }
 
 .modal-head {
   align-items: center;
@@ -542,3 +543,108 @@ hr { border: none; border-top: 1px solid var(--border); }
   width: 14px;
 }
 .toggle:checked::after { left: 19px; }
+
+/* ── Call type toggle ────────────────────────────────────────────────── */
+.call-type-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem;
+}
+
+.call-type-option {
+  cursor: pointer;
+  display: block;
+}
+.call-type-option input[type=radio] { display: none; }
+
+.call-type-body {
+  align-items: center;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  padding: 1rem;
+  text-align: center;
+  transition: border-color .15s, background .15s;
+}
+.call-type-body svg { color: var(--muted); }
+.call-type-body span { font-weight: 600; font-size: .9rem; }
+.call-type-body small { color: var(--muted); font-size: .75rem; }
+
+.call-type-option input:checked + .call-type-body {
+  border-color: var(--teal);
+  background: #eef7fb;
+}
+.call-type-option input:checked + .call-type-body svg { color: var(--teal); }
+
+/* ── Status toggle row ───────────────────────────────────────────────── */
+.status-toggle-row {
+  align-items: center;
+  display: flex;
+  gap: .65rem;
+  font-size: .9rem;
+}
+
+/* ── 12-hour time picker ─────────────────────────────────────────────── */
+.time-picker {
+  align-items: center;
+  display: flex;
+  gap: .4rem;
+}
+.time-picker select {
+  appearance: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: .9rem;
+  padding: .5rem .4rem;
+  transition: border-color .15s;
+}
+.time-picker select:focus { border-color: var(--teal); outline: none; }
+.time-picker #scheduleHour   { width: 68px; }
+.time-picker #scheduleMinute { width: 68px; }
+.time-picker #scheduleAmPm   { width: 72px; font-weight: 600; }
+.time-sep { color: var(--muted); font-size: 1.2rem; font-weight: 700; line-height: 1; }
+
+/* ── Audio preview button ────────────────────────────────────────────── */
+.btn-preview {
+  align-items: center;
+  background: #e8f4fb;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--teal);
+  cursor: pointer;
+  display: flex;
+  font-size: .82rem;
+  font-weight: 600;
+  gap: .35rem;
+  padding: .5rem .9rem;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.btn-preview:hover   { background: #c8e6f5; }
+.btn-preview.playing { background: var(--teal); color: #fff; }
+.btn-preview:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Schedule items (inside client modal) ────────────────────────────── */
+.schedule-item {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  gap: .75rem;
+  margin-top: .5rem;
+  padding: .7rem .9rem;
+}
+.schedule-item-info { flex: 1; min-width: 0; }
+.schedule-item-title {
+  font-size: .9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-item-meta { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
