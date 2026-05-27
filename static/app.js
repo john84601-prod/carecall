@@ -3,6 +3,14 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let allClients = [];
 let currentClientId = null;   // client being edited in modal
+
+// Recording state
+let mediaRecorder = null;
+let audioChunks = [];
+let recordedBlob = null;
+let recordTimerInterval = null;
+let recordStartTime = null;
+let micStream = null;
 let currentContactId = null;  // contact being edited
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -119,15 +127,17 @@ function renderClients() {
       <div class="client-card">
         <div class="client-card-head">
           <div>
-            <div class="client-name">${esc(c.name)} ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}</div>
+            <div class="client-name">${esc(c.full_name)} ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}</div>
             <div class="client-phone">${esc(c.phone)}</div>
           </div>
           <div class="action-btns">
             <button class="btn-edit" onclick="editClient(${c.id})">Edit</button>
-            <button class="btn-danger" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>
+            <button class="btn-danger" onclick="deleteClient(${c.id}, '${esc(c.full_name)}')">Delete</button>
           </div>
         </div>
-        ${c.notes ? `<div class="client-notes">${esc(c.notes)}</div>` : ''}
+        ${c.birthday ? `<div class="client-notes">🎂 ${fmtBirthday(c.birthday)}</div>` : ''}
+        ${fmtAddress(c) ? `<div class="client-notes">${esc(fmtAddress(c))}</div>` : ''}
+        ${c.notes ? `<div class="client-notes" style="margin-top:.25rem">${esc(c.notes)}</div>` : ''}
         ${renderEcSummary(c.emergency_contacts)}
       </div>`).join('') +
   '</div>';
@@ -151,8 +161,15 @@ function showClientModal(client) {
   currentClientId = null;
   document.getElementById('clientModalTitle').textContent = 'Add Client';
   document.getElementById('clientId').value = '';
-  document.getElementById('clientName').value = '';
+  document.getElementById('clientFirstName').value = '';
+  document.getElementById('clientLastName').value = '';
   document.getElementById('clientPhone').value = '';
+  document.getElementById('clientBirthday').value = '';
+  document.getElementById('clientAddress1').value = '';
+  document.getElementById('clientAddress2').value = '';
+  document.getElementById('clientCity').value = '';
+  document.getElementById('clientState').value = '';
+  document.getElementById('clientZip').value = '';
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
   document.getElementById('ecPanel').style.display = 'none';
@@ -165,8 +182,15 @@ async function editClient(id) {
   if (!c) return;
   document.getElementById('clientModalTitle').textContent = 'Edit Client';
   document.getElementById('clientId').value = c.id;
-  document.getElementById('clientName').value = c.name;
+  document.getElementById('clientFirstName').value = c.first_name;
+  document.getElementById('clientLastName').value = c.last_name;
   document.getElementById('clientPhone').value = c.phone;
+  document.getElementById('clientBirthday').value = c.birthday || '';
+  document.getElementById('clientAddress1').value = c.address1 || '';
+  document.getElementById('clientAddress2').value = c.address2 || '';
+  document.getElementById('clientCity').value = c.city || '';
+  document.getElementById('clientState').value = c.state || '';
+  document.getElementById('clientZip').value = c.zip_code || '';
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
   document.getElementById('ecPanel').style.display = '';
@@ -178,10 +202,17 @@ async function saveClient(e) {
   e.preventDefault();
   const id = document.getElementById('clientId').value;
   const payload = {
-    name:   document.getElementById('clientName').value.trim(),
-    phone:  document.getElementById('clientPhone').value.trim(),
-    notes:  document.getElementById('clientNotes').value.trim(),
-    active: document.getElementById('clientActive').checked,
+    first_name: document.getElementById('clientFirstName').value.trim(),
+    last_name:  document.getElementById('clientLastName').value.trim(),
+    phone:      document.getElementById('clientPhone').value.trim(),
+    birthday:   document.getElementById('clientBirthday').value || null,
+    address1:   document.getElementById('clientAddress1').value.trim(),
+    address2:   document.getElementById('clientAddress2').value.trim(),
+    city:       document.getElementById('clientCity').value.trim(),
+    state:      document.getElementById('clientState').value.trim().toUpperCase(),
+    zip_code:   document.getElementById('clientZip').value.trim(),
+    notes:      document.getElementById('clientNotes').value.trim(),
+    active:     document.getElementById('clientActive').checked,
   };
   try {
     if (id) {
@@ -452,7 +483,7 @@ async function populateScheduleClients() {
   const cur = sel.value;
   sel.innerHTML = allClients
     .filter(c => c.active)
-    .map(c => `<option value="${c.id}">${esc(c.name)}</option>`)
+    .map(c => `<option value="${c.id}">${esc(c.full_name)}</option>`)
     .join('');
   if (cur) sel.value = cur;
 }
@@ -591,6 +622,25 @@ function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function fmtBirthday(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const notYet = today.getMonth() < d.getMonth() ||
+    (today.getMonth() === d.getMonth() && today.getDate() < d.getDate());
+  if (notYet) age--;
+  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) +
+    ` (age ${age})`;
+}
+
+function fmtAddress(c) {
+  const lines = [c.address1, c.address2].filter(Boolean);
+  const cityLine = [c.city, c.state, c.zip_code].filter(Boolean).join(', ');
+  if (cityLine) lines.push(cityLine);
+  return lines.join(' · ');
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -621,4 +671,114 @@ function typeBadge(t) {
          t === 'wellness'  ? '<span class="badge badge-green">Wellness</span>' :
          t === 'emergency' ? '<span class="badge badge-red">Emergency</span>' :
          `<span class="badge badge-gray">${esc(t)}</span>`;
+}
+
+// ── Microphone recording ───────────────────────────────────────────────────────
+async function startRecording() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    if (e.name === 'NotAllowedError') {
+      toast('Microphone access was denied. Please allow it in your browser settings.', 'error');
+    } else {
+      toast('Could not access microphone: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  audioChunks = [];
+
+  // Pick the best supported format
+  const preferredTypes = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/mp4',
+  ];
+  const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+
+  mediaRecorder = new MediaRecorder(micStream, mimeType ? { mimeType } : {});
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+    const url = URL.createObjectURL(recordedBlob);
+    document.getElementById('audioPreview').src = url;
+    document.getElementById('recordPreview').style.display = '';
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  };
+
+  mediaRecorder.start(250); // collect in 250ms chunks
+  recordStartTime = Date.now();
+
+  // Update UI
+  document.getElementById('recordBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('recordTimer').style.display = '';
+  document.getElementById('recordPreview').style.display = 'none';
+  document.getElementById('recordBtn').classList.add('recording');
+
+  recordTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    document.getElementById('recordTimer').textContent = `${m}:${s}`;
+  }, 500);
+}
+
+function stopRecording() {
+  clearInterval(recordTimerInterval);
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
+  document.getElementById('recordBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('recordTimer').style.display = 'none';
+  document.getElementById('recordBtn').classList.remove('recording');
+}
+
+async function saveRecording() {
+  if (!recordedBlob) { toast('Nothing recorded yet', 'error'); return; }
+
+  let name = document.getElementById('recordName').value.trim();
+  if (!name) { toast('Please enter a filename before saving', 'error'); return; }
+  // Strip any extension the user typed — the server always saves as .mp3
+  name = name.replace(/\.[^.]+$/, '');
+
+  const fd = new FormData();
+  fd.append('audio', recordedBlob, 'recording.webm');
+  fd.append('name', name);
+
+  const btn = document.querySelector('.record-panel .btn-primary');
+  const orig = btn.textContent;
+  btn.textContent = 'Converting…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/record', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    toast(`Saved "${data.filename}"`, 'success');
+    discardRecording();
+    await loadAudio();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+function discardRecording() {
+  recordedBlob = null;
+  const preview = document.getElementById('audioPreview');
+  URL.revokeObjectURL(preview.src);
+  preview.src = '';
+  document.getElementById('recordPreview').style.display = 'none';
+  document.getElementById('recordName').value = '';
 }

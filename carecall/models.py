@@ -6,8 +6,15 @@ import json
 class Client(db.Model):
     __tablename__ = 'clients'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
+    first_name = db.Column(db.String(60), nullable=False, default='')
+    last_name = db.Column(db.String(60), nullable=False, default='')
     phone = db.Column(db.String(20), nullable=False)
+    address1 = db.Column(db.String(100), default='')
+    address2 = db.Column(db.String(100), default='')
+    city = db.Column(db.String(60), default='')
+    state = db.Column(db.String(2), default='')
+    zip_code = db.Column(db.String(10), default='')
+    birthday = db.Column(db.Date, nullable=True)
     active = db.Column(db.Boolean, default=True)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -20,11 +27,23 @@ class Client(db.Model):
     call_logs = db.relationship('CallLog', back_populates='client', cascade='all, delete-orphan')
     wellness_sessions = db.relationship('WellnessSession', back_populates='client', cascade='all, delete-orphan')
 
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
     def to_dict(self):
         return {
             'id': self.id,
-            'name': self.name,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'full_name': self.full_name,
             'phone': self.phone,
+            'address1': self.address1,
+            'address2': self.address2,
+            'city': self.city,
+            'state': self.state,
+            'zip_code': self.zip_code,
+            'birthday': self.birthday.isoformat() if self.birthday else None,
             'active': self.active,
             'notes': self.notes,
             'created_at': self.created_at.isoformat(),
@@ -83,7 +102,7 @@ class Schedule(db.Model):
         return {
             'id': self.id,
             'client_id': self.client_id,
-            'client_name': self.client.name if self.client else '',
+            'client_name': self.client.full_name if self.client else '',
             'name': self.name,
             'call_type': self.call_type,
             'active': self.active,
@@ -130,7 +149,7 @@ class WellnessSession(db.Model):
             'id': self.id,
             'schedule_id': self.schedule_id,
             'client_id': self.client_id,
-            'client_name': self.client.name if self.client else '',
+            'client_name': self.client.full_name if self.client else '',
             'status': self.status,
             'current_attempt': self.current_attempt,
             'emergency_acknowledged': self.emergency_acknowledged,
@@ -163,7 +182,7 @@ class CallLog(db.Model):
         return {
             'id': self.id,
             'client_id': self.client_id,
-            'client_name': self.client.name if self.client else '',
+            'client_name': self.client.full_name if self.client else '',
             'schedule_id': self.schedule_id,
             'wellness_session_id': self.wellness_session_id,
             'call_sid': self.call_sid,

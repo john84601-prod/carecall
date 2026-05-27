@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
@@ -12,16 +13,27 @@ api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/clients', methods=['GET'])
 def get_clients():
-    clients = Client.query.order_by(Client.name).all()
+    clients = Client.query.order_by(Client.last_name, Client.first_name).all()
     return jsonify([c.to_dict() for c in clients])
 
 
 @api_bp.route('/clients', methods=['POST'])
 def create_client():
     data = request.get_json()
-    if not data or not data.get('name') or not data.get('phone'):
-        return jsonify({'error': 'name and phone are required'}), 400
-    client = Client(name=data['name'], phone=data['phone'], notes=data.get('notes', ''))
+    if not data or not data.get('first_name') or not data.get('phone'):
+        return jsonify({'error': 'first_name and phone are required'}), 400
+    client = Client(
+        first_name=data['first_name'].strip(),
+        last_name=data.get('last_name', '').strip(),
+        phone=data['phone'].strip(),
+        address1=data.get('address1', '').strip(),
+        address2=data.get('address2', '').strip(),
+        city=data.get('city', '').strip(),
+        state=data.get('state', '').strip().upper(),
+        zip_code=data.get('zip_code', '').strip(),
+        birthday=_parse_date(data.get('birthday')),
+        notes=data.get('notes', ''),
+    )
     db.session.add(client)
     db.session.commit()
     return jsonify(client.to_dict()), 201
@@ -36,10 +48,18 @@ def get_client(client_id):
 def update_client(client_id):
     client = db.get_or_404(Client, client_id)
     data = request.get_json()
-    client.name = data.get('name', client.name)
-    client.phone = data.get('phone', client.phone)
-    client.notes = data.get('notes', client.notes)
-    client.active = data.get('active', client.active)
+    client.first_name = data.get('first_name', client.first_name).strip()
+    client.last_name  = data.get('last_name',  client.last_name).strip()
+    client.phone    = data.get('phone',    client.phone)
+    client.address1 = data.get('address1', client.address1).strip()
+    client.address2 = data.get('address2', client.address2).strip()
+    client.city     = data.get('city',     client.city).strip()
+    client.state    = data.get('state',    client.state).strip().upper()
+    client.zip_code  = data.get('zip_code',  client.zip_code).strip()
+    if 'birthday' in data:
+        client.birthday = _parse_date(data['birthday'])
+    client.notes    = data.get('notes',    client.notes)
+    client.active   = data.get('active',   client.active)
     db.session.commit()
     return jsonify(client.to_dict())
 
@@ -203,6 +223,61 @@ def delete_upload(filename):
     return '', 204
 
 
+@api_bp.route('/record', methods=['POST'])
+def save_recording():
+    """Accept a browser-recorded audio blob, convert to MP3 via ffmpeg, save to uploads/."""
+    import subprocess
+    import tempfile
+
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio data received'}), 400
+
+    audio_file = request.files['audio']
+    name = request.form.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Filename is required'}), 400
+
+    # Sanitize and force .mp3 extension
+    filename = re.sub(r'[^\w\-]', '_', name) + '.mp3'
+    output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+
+    # Save the raw browser audio to a temp file
+    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as tmp:
+        audio_file.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            [
+                'ffmpeg', '-y',
+                '-i', tmp_path,
+                '-acodec', 'libmp3lame',
+                '-ab', '128k',
+                '-ar', '8000',   # 8kHz is optimal for phone audio
+                output_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            current_app.logger.error(f"ffmpeg stderr: {result.stderr}")
+            return jsonify({'error': 'Audio conversion failed. Check that ffmpeg is installed.'}), 500
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'ffmpeg is not installed. Run: sudo apt-get install ffmpeg'
+        }), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Audio conversion timed out'}), 500
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return jsonify({'filename': filename}), 201
+
+
 # ── Call logs & sessions ───────────────────────────────────────────────────────
 
 @api_bp.route('/logs', methods=['GET'])
@@ -264,3 +339,15 @@ def test_call():
         return jsonify({'success': True, 'call_sid': sid})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _parse_date(value):
+    """Parse a YYYY-MM-DD string into a date object, or return None."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
