@@ -71,7 +71,7 @@ def wellness_answer():
             timeout=15,
         )
         gather.say(
-            f"Hello {client.name}, this is your wellness check call. "
+            f"Hello {client.first_name}, this is your wellness check call. "
             f"Please press {key} to confirm you are okay.",
             voice='alice',
         )
@@ -143,7 +143,7 @@ def emergency_answer():
             timeout=20,
         )
         gather.say(
-            f"This is an urgent wellness notification. {client.name} has not responded to "
+            f"This is an urgent wellness notification. {client.full_name} has not responded to "
             f"{session.current_attempt} wellness check calls. "
             f"As their emergency contact, please press {key} to confirm "
             "you will follow up with them immediately.",

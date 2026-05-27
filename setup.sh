@@ -18,6 +18,14 @@ if ! command -v python3 &>/dev/null; then
   sudo apt-get install -y python3 python3-pip python3-venv
 fi
 
+if ! command -v ffmpeg &>/dev/null; then
+  echo "[*] Installing ffmpeg (required for microphone recording)..."
+  sudo apt-get update -qq
+  sudo apt-get install -y ffmpeg
+else
+  echo "[✓] ffmpeg already installed"
+fi
+
 PY_VER=$(python3 -c 'import sys; print(sys.version_info[:2])' 2>/dev/null || echo "unknown")
 echo "[✓] Python 3 found: $PY_VER"
 

@@ -1,0 +1,29 @@
+# Credentials — never commit these
+.env
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded audio files (too large for git)
+uploads/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

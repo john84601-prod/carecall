@@ -36,5 +36,66 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_client_name_split()
+        _migrate_client_address_fields()
+        _migrate_client_birthday()
 
     return app
+
+
+def _migrate_client_birthday():
+    """Add birthday column if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('clients')]
+    if 'birthday' not in existing:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN birthday DATE"))
+            conn.commit()
+
+
+def _migrate_client_address_fields():
+    """Add address columns if they don't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('clients')]
+    new_cols = {
+        'address1': "VARCHAR(100) NOT NULL DEFAULT ''",
+        'address2': "VARCHAR(100) NOT NULL DEFAULT ''",
+        'city':     "VARCHAR(60)  NOT NULL DEFAULT ''",
+        'state':    "VARCHAR(2)   NOT NULL DEFAULT ''",
+        'zip_code': "VARCHAR(10)  NOT NULL DEFAULT ''",
+    }
+    with engine.connect() as conn:
+        for col, definition in new_cols.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE clients ADD COLUMN {col} {definition}"))
+        conn.commit()
+
+
+def _migrate_client_name_split():
+    """One-time migration: add first_name/last_name columns and populate from legacy name column."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('clients')]
+
+    if 'first_name' in existing:
+        return  # already migrated
+
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE clients ADD COLUMN first_name VARCHAR(60) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE clients ADD COLUMN last_name  VARCHAR(60) NOT NULL DEFAULT ''"))
+
+        # Split legacy `name` on the first space
+        conn.execute(text("""
+            UPDATE clients SET
+                first_name = CASE
+                    WHEN INSTR(name, ' ') > 0 THEN SUBSTR(name, 1, INSTR(name, ' ') - 1)
+                    ELSE name
+                END,
+                last_name = CASE
+                    WHEN INSTR(name, ' ') > 0 THEN SUBSTR(name, INSTR(name, ' ') + 1)
+                    ELSE ''
+                END
+        """))
+        conn.commit()
