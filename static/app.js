@@ -172,6 +172,7 @@ function showClientModal(client) {
   document.getElementById('clientZip').value = '';
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
+  document.getElementById('schedulesPanel').style.display = 'none';
   document.getElementById('ecPanel').style.display = 'none';
   openOverlay('clientOverlay');
 }
@@ -193,8 +194,9 @@ async function editClient(id) {
   document.getElementById('clientZip').value = c.zip_code || '';
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
+  document.getElementById('schedulesPanel').style.display = '';
   document.getElementById('ecPanel').style.display = '';
-  await loadContactsList(id);
+  await Promise.all([loadClientSchedules(id), loadContactsList(id)]);
   openOverlay('clientOverlay');
 }
 
@@ -329,86 +331,125 @@ async function deleteContact(id) {
   }
 }
 
-// ── Schedules ─────────────────────────────────────────────────────────────────
+// ── Schedules tab (read-only overview) ────────────────────────────────────────
 async function loadSchedules() {
   try {
-    const [schedules] = await Promise.all([api('GET', '/schedules'), loadClientsIfNeeded()]);
-    renderSchedules(schedules);
+    const schedules = await api('GET', '/schedules');
+    const tbody = document.getElementById('schedulesTable');
+    if (!schedules.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = schedules.map(s => `
+      <tr>
+        <td>${esc(s.name || '—')}</td>
+        <td>${esc(s.client_name)}</td>
+        <td>${typeBadge(s.call_type)}</td>
+        <td style="white-space:nowrap;font-weight:600">${fmt12h(s.time_of_day)}</td>
+        <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
+        <td>${s.active
+          ? '<span class="badge badge-green">Active</span>'
+          : '<span class="badge badge-gray">Inactive</span>'}</td>
+      </tr>`).join('');
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-function renderSchedules(schedules) {
-  const tbody = document.getElementById('schedulesTable');
-  if (!schedules.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">No schedules yet.</td></tr>';
-    return;
+// ── Per-client schedule list (inside client modal) ─────────────────────────────
+async function loadClientSchedules(clientId) {
+  try {
+    const schedules = await api('GET', `/clients/${clientId}/schedules`);
+    renderClientSchedules(schedules);
+  } catch (e) {
+    toast(e.message, 'error');
   }
-  tbody.innerHTML = schedules.map(s => `
-    <tr>
-      <td>${esc(s.name || '—')}</td>
-      <td>${esc(s.client_name)}</td>
-      <td>${typeBadge(s.call_type)}</td>
-      <td style="white-space:nowrap;font-weight:600">${s.time_of_day}</td>
-      <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
-      <td>
-        <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''}
-          onchange="toggleSchedule(${s.id}, this.checked)">
-      </td>
-      <td>
-        <div class="action-btns">
-          <button class="btn-edit btn-sm" onclick="editSchedule(${s.id})">Edit</button>
-          <button class="btn-danger btn-sm" onclick="deleteSchedule(${s.id})">Delete</button>
-        </div>
-      </td>
-    </tr>`).join('');
 }
 
-async function showScheduleModal() {
-  await loadClientsIfNeeded();
-  await populateScheduleClients();
+function renderClientSchedules(schedules) {
+  const el = document.getElementById('clientSchedulesList');
+  if (!schedules.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.4rem 0">No call schedules yet.</div>';
+    return;
+  }
+  el.innerHTML = schedules.map(s => {
+    const title = s.name || (s.call_type === 'reminder' ? 'Reminder' : 'Wellness Check');
+    const meta = [fmt12h(s.time_of_day), fmtDays(s.days_of_week)].join(' · ');
+    return `
+      <div class="schedule-item">
+        <div class="schedule-item-info">
+          <div class="schedule-item-title">${esc(title)} ${typeBadge(s.call_type)}</div>
+          <div class="schedule-item-meta">${meta}</div>
+        </div>
+        <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''}
+          title="${s.active ? 'Active' : 'Inactive'}"
+          onchange="toggleClientSchedule(${s.id}, this.checked)">
+        <div class="action-btns">
+          <button class="btn-edit btn-sm" onclick="editClientSchedule(${s.id})">Edit</button>
+          <button class="btn-danger btn-sm" onclick="deleteClientSchedule(${s.id})">Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function showAddScheduleModal() {
+  _initTimePicker();
   await populateAudioSelect();
-  document.getElementById('scheduleModalTitle').textContent = 'Add Schedule';
+  document.getElementById('scheduleModalTitle').textContent = 'Add Call Schedule';
   document.getElementById('scheduleId').value = '';
+  document.getElementById('scheduleClientId').value = currentClientId;
   document.getElementById('scheduleName').value = '';
-  document.getElementById('scheduleTime').value = '';
+  document.querySelector('input[name="callType"][value="reminder"]').checked = true;
+  document.getElementById('scheduleActive').checked = true;
+  document.getElementById('scheduleStatusLabel').textContent = 'Active';
+  document.getElementById('scheduleHour').value = '8';
+  document.getElementById('scheduleMinute').value = '00';
+  document.getElementById('scheduleAmPm').value = 'AM';
+  document.querySelectorAll('#dayPicker input').forEach(cb => cb.checked = true);
+  document.getElementById('scheduleMp3').value = '';
   document.getElementById('scheduleKey').value = '1';
   document.getElementById('scheduleMaxAttempts').value = 3;
   document.getElementById('scheduleInterval').value = 10;
-  document.getElementById('scheduleType').value = 'reminder';
-  document.getElementById('scheduleActive').checked = true;
-  // Reset day checkboxes
-  document.querySelectorAll('#dayPicker input').forEach(cb => cb.checked = true);
+  resetAudioPreview();
   toggleScheduleFields();
   openOverlay('scheduleOverlay');
 }
 
-async function editSchedule(id) {
-  await loadClientsIfNeeded();
-  await populateScheduleClients();
+async function editClientSchedule(id) {
+  _initTimePicker();
   await populateAudioSelect();
   try {
-    const schedules = await api('GET', '/schedules');
+    const schedules = await api('GET', `/clients/${currentClientId}/schedules`);
     const s = schedules.find(x => x.id === id);
     if (!s) return;
-    document.getElementById('scheduleModalTitle').textContent = 'Edit Schedule';
+
+    document.getElementById('scheduleModalTitle').textContent = 'Edit Call Schedule';
     document.getElementById('scheduleId').value = s.id;
+    document.getElementById('scheduleClientId').value = s.client_id;
     document.getElementById('scheduleName').value = s.name || '';
-    document.getElementById('scheduleClient').value = s.client_id;
-    document.getElementById('scheduleType').value = s.call_type;
-    document.getElementById('scheduleTime').value = s.time_of_day;
-    document.getElementById('scheduleKey').value = s.required_keypress || '1';
-    document.getElementById('scheduleMaxAttempts').value = s.max_attempts || 3;
-    document.getElementById('scheduleInterval').value = s.attempt_interval_minutes || 10;
-    document.getElementById('scheduleActive').checked = s.active;
-    document.getElementById('scheduleMp3').value = s.mp3_filename || '';
+
+    document.querySelector(`input[name="callType"][value="${s.call_type}"]`).checked = true;
+
+    const active = s.active;
+    document.getElementById('scheduleActive').checked = active;
+    document.getElementById('scheduleStatusLabel').textContent = active ? 'Active' : 'Inactive';
+
+    const t = _to12h(s.time_of_day);
+    document.getElementById('scheduleHour').value   = t.hour;
+    document.getElementById('scheduleMinute').value = t.minute;
+    document.getElementById('scheduleAmPm').value   = t.ampm;
 
     const days = (s.days_of_week || '').split(',');
     document.querySelectorAll('#dayPicker input').forEach(cb => {
       cb.checked = days.includes(cb.value);
     });
 
+    document.getElementById('scheduleMp3').value         = s.mp3_filename || '';
+    document.getElementById('scheduleKey').value          = s.required_keypress || '1';
+    document.getElementById('scheduleMaxAttempts').value  = s.max_attempts || 3;
+    document.getElementById('scheduleInterval').value     = s.attempt_interval_minutes || 10;
+
+    resetAudioPreview();
     toggleScheduleFields();
     openOverlay('scheduleOverlay');
   } catch (e) {
@@ -418,21 +459,31 @@ async function editSchedule(id) {
 
 async function saveSchedule(e) {
   e.preventDefault();
-  const id = document.getElementById('scheduleId').value;
+  const id       = document.getElementById('scheduleId').value;
+  const clientId = document.getElementById('scheduleClientId').value;
+
   const days = [...document.querySelectorAll('#dayPicker input:checked')]
     .map(cb => cb.value).join(',');
-  if (!days) { toast('Select at least one day', 'error'); return; }
+  if (!days) { toast('Select at least one Call Day', 'error'); return; }
+
+  const time24 = _to24h(
+    document.getElementById('scheduleHour').value,
+    document.getElementById('scheduleMinute').value,
+    document.getElementById('scheduleAmPm').value,
+  );
+
+  const callType = document.querySelector('input[name="callType"]:checked').value;
 
   const payload = {
+    client_id:                parseInt(clientId),
     name:                     document.getElementById('scheduleName').value.trim(),
-    client_id:                parseInt(document.getElementById('scheduleClient').value),
-    call_type:                document.getElementById('scheduleType').value,
-    time_of_day:              document.getElementById('scheduleTime').value,
+    call_type:                callType,
+    time_of_day:              time24,
     days_of_week:             days,
     mp3_filename:             document.getElementById('scheduleMp3').value || null,
-    required_keypress:        document.getElementById('scheduleKey').value,
-    max_attempts:             parseInt(document.getElementById('scheduleMaxAttempts').value),
-    attempt_interval_minutes: parseInt(document.getElementById('scheduleInterval').value),
+    required_keypress:        document.getElementById('scheduleKey').value || '1',
+    max_attempts:             parseInt(document.getElementById('scheduleMaxAttempts').value) || 3,
+    attempt_interval_minutes: parseInt(document.getElementById('scheduleInterval').value) || 10,
     active:                   document.getElementById('scheduleActive').checked,
   };
 
@@ -445,47 +496,110 @@ async function saveSchedule(e) {
       toast('Schedule created', 'success');
     }
     closeOverlay('scheduleOverlay');
-    await loadSchedules();
+    await loadClientSchedules(currentClientId);
   } catch (err) {
     toast(err.message, 'error');
   }
 }
 
-async function toggleSchedule(id, active) {
+async function toggleClientSchedule(id, active) {
   try {
     await api('PUT', `/schedules/${id}`, { active });
     toast(active ? 'Schedule activated' : 'Schedule paused');
+    await loadClientSchedules(currentClientId);
   } catch (e) {
     toast(e.message, 'error');
-    loadSchedules();
+    await loadClientSchedules(currentClientId);
   }
 }
 
-async function deleteSchedule(id) {
-  if (!confirm('Delete this schedule? Future calls will stop.')) return;
+async function deleteClientSchedule(id) {
+  if (!confirm('Delete this call schedule? Future calls will stop immediately.')) return;
   try {
     await api('DELETE', `/schedules/${id}`);
     toast('Schedule deleted');
-    await loadSchedules();
+    await loadClientSchedules(currentClientId);
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
 function toggleScheduleFields() {
-  const type = document.getElementById('scheduleType').value;
+  const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('reminderFields').style.display = type === 'reminder' ? '' : 'none';
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
 }
 
-async function populateScheduleClients() {
-  const sel = document.getElementById('scheduleClient');
-  const cur = sel.value;
-  sel.innerHTML = allClients
-    .filter(c => c.active)
-    .map(c => `<option value="${c.id}">${esc(c.full_name)}</option>`)
-    .join('');
-  if (cur) sel.value = cur;
+// ── Time picker helpers ────────────────────────────────────────────────────────
+function _initTimePicker() {
+  const hourSel = document.getElementById('scheduleHour');
+  if (hourSel.options.length) return;
+  for (let h = 1; h <= 12; h++) hourSel.add(new Option(String(h), String(h)));
+  const minSel = document.getElementById('scheduleMinute');
+  for (let m = 0; m < 60; m += 5) {
+    const v = String(m).padStart(2, '0');
+    minSel.add(new Option(v, v));
+  }
+}
+
+function _to24h(hour12, minute, ampm) {
+  let h = parseInt(hour12, 10);
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${minute}`;
+}
+
+function _to12h(time24) {
+  if (!time24) return { hour: '8', minute: '00', ampm: 'AM' };
+  const [h, m] = time24.split(':').map(Number);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const hour = h % 12 || 12;
+  // Round minute down to nearest 5 for the select
+  const minute = String(Math.floor(m / 5) * 5).padStart(2, '0');
+  return { hour: String(hour), minute, ampm };
+}
+
+function fmt12h(time24) {
+  const { hour, minute, ampm } = _to12h(time24);
+  return `${hour}:${minute} ${ampm}`;
+}
+
+// ── Audio preview ──────────────────────────────────────────────────────────────
+let _audioPlaying = false;
+
+function toggleAudioPreview() {
+  const filename = document.getElementById('scheduleMp3').value;
+  if (!filename) { toast('Select an audio file first', 'error'); return; }
+
+  const player = document.getElementById('scheduleAudioPlayer');
+  const btn    = document.getElementById('audioPreviewBtn');
+
+  if (_audioPlaying) {
+    player.pause();
+    player.currentTime = 0;
+    _audioPlaying = false;
+    btn.textContent = '▶ Preview';
+    btn.classList.remove('playing');
+  } else {
+    player.src = `/uploads/${encodeURIComponent(filename)}`;
+    player.play().catch(err => toast('Could not play audio: ' + err.message, 'error'));
+    _audioPlaying = true;
+    btn.textContent = '⏹ Stop';
+    btn.classList.add('playing');
+    player.onended = () => {
+      _audioPlaying = false;
+      btn.textContent = '▶ Preview';
+      btn.classList.remove('playing');
+    };
+  }
+}
+
+function resetAudioPreview() {
+  const player = document.getElementById('scheduleAudioPlayer');
+  if (player) { player.pause(); player.currentTime = 0; }
+  _audioPlaying = false;
+  const btn = document.getElementById('audioPreviewBtn');
+  if (btn) { btn.textContent = '▶ Preview'; btn.classList.remove('playing'); }
 }
 
 async function populateAudioSelect() {
@@ -493,7 +607,7 @@ async function populateAudioSelect() {
     const files = await api('GET', '/uploads');
     const sel = document.getElementById('scheduleMp3');
     const cur = sel.value;
-    sel.innerHTML = '<option value="">— none —</option>' +
+    sel.innerHTML = '<option value="">— select audio file —</option>' +
       files.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
     if (cur) sel.value = cur;
   } catch (_) {}

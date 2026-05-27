@@ -124,6 +124,16 @@ def delete_contact(contact_id):
 
 # ── Schedules ──────────────────────────────────────────────────────────────────
 
+@api_bp.route('/clients/<int:client_id>/schedules', methods=['GET'])
+def get_client_schedules(client_id):
+    db.get_or_404(Client, client_id)
+    schedules = (Schedule.query
+                 .filter_by(client_id=client_id)
+                 .order_by(Schedule.time_of_day)
+                 .all())
+    return jsonify([s.to_dict() for s in schedules])
+
+
 @api_bp.route('/schedules', methods=['GET'])
 def get_schedules():
     schedules = Schedule.query.order_by(Schedule.client_id, Schedule.time_of_day).all()
