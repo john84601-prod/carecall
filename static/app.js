@@ -741,6 +741,7 @@ async function deleteClientSchedule(id) {
 function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
+  document.getElementById('keyPressField').style.display  = type === 'wellness' ? '' : 'none';
   const hint = document.getElementById('audioHint');
   if (hint) hint.textContent = type === 'wellness'
     ? '(optional — falls back to text-to-speech if not set)'

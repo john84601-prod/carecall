@@ -514,8 +514,8 @@ input[type=text].flex-1, input[type=tel].flex-1 {
 /* ── Day picker ──────────────────────────────────────────────────────── */
 .day-picker {
   display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
+  flex-wrap: nowrap;
+  gap: .4rem;
 }
 .day-picker label {
   align-items: center;
