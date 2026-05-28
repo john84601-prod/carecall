@@ -380,20 +380,18 @@
         </div>
       </div>
 
-      <!-- Call Audio (Reminder) -->
-      <div id="reminderFields">
-        <div class="form-group">
-          <label>Call Audio</label>
-          <div class="row gap-sm">
-            <select id="scheduleMp3" class="flex-1" onchange="resetAudioPreview()">
-              <option value="">— select audio file —</option>
-            </select>
-            <button type="button" class="btn-preview" id="audioPreviewBtn" onclick="toggleAudioPreview()">
-              ▶ Preview
-            </button>
-          </div>
-          <audio id="scheduleAudioPlayer" style="display:none"></audio>
+      <!-- Call Audio (both types — required for Reminder, optional for Wellness) -->
+      <div class="form-group">
+        <label>Call Audio <span class="hint" id="audioHint">(required — select a recorded file)</span></label>
+        <div class="row gap-sm">
+          <select id="scheduleMp3" class="flex-1" onchange="resetAudioPreview()">
+            <option value="">— select audio file —</option>
+          </select>
+          <button type="button" class="btn-preview" id="audioPreviewBtn" onclick="toggleAudioPreview()">
+            ▶ Preview
+          </button>
         </div>
+        <audio id="scheduleAudioPlayer" style="display:none"></audio>
       </div>
 
       <!-- Wellness-only fields -->

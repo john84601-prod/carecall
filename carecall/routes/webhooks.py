@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from threading import Thread
 
@@ -17,6 +18,11 @@ def _xml(vr):
 def _public_url():
     from carecall.tunnel import get_public_url
     return get_public_url()
+
+
+def _voice():
+    """TTS voice for all synthesised speech. Override with TWILIO_VOICE in .env."""
+    return os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural')
 
 
 # ── Reminder calls ─────────────────────────────────────────────────────────────
@@ -48,11 +54,10 @@ def reminder_answer():
             mp3_url = f"{_public_url()}/uploads/{schedule.mp3_filename}"
             vr.play(mp3_url)
         else:
-            vr.say("This is your scheduled reminder. Have a great day.", voice='alice')
-
+            vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
         db.session.commit()
     else:
-        vr.say("This is your scheduled reminder. Have a great day.", voice='alice')
+        vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
 
     return _xml(vr)
 
@@ -84,15 +89,21 @@ def wellness_answer():
             method='POST',
             timeout=15,
         )
-        gather.say(
-            f"Hello {client.first_name}, this is your wellness check call. "
-            f"Please press {key} to confirm you are okay.",
-            voice='alice',
-        )
+
+        if schedule.mp3_filename:
+            # Play the custom audio prompt inside the gather
+            gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+        else:
+            gather.say(
+                f"Hello {client.first_name}, this is your wellness check call. "
+                f"Please press {key} to confirm you are okay.",
+                voice=_voice(),
+            )
+
         vr.append(gather)
-        vr.say("We did not receive your response. Goodbye.", voice='alice')
+        vr.say("We did not receive your response. Goodbye.", voice=_voice())
     else:
-        vr.say("Wellness check call. Session not found. Goodbye.", voice='alice')
+        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
 
     return _xml(vr)
 
@@ -114,13 +125,13 @@ def wellness_keypress():
             log.status = 'acknowledged'
             session.status = 'acknowledged'
             session.resolved_at = datetime.utcnow()
-            vr.say("Thank you. We have recorded your check-in. Take care.", voice='alice')
+            vr.say("Thank you. We have recorded your check-in. Take care.", voice=_voice())
         else:
             log.status = 'wrong-keypress'
-            vr.say("That was not the expected response. Goodbye.", voice='alice')
+            vr.say("That was not the expected response. Goodbye.", voice=_voice())
         db.session.commit()
     else:
-        vr.say("Session not found. Goodbye.", voice='alice')
+        vr.say("Session not found. Goodbye.", voice=_voice())
 
     return _xml(vr)
 
@@ -161,12 +172,12 @@ def emergency_answer():
             f"{session.current_attempt} wellness check calls. "
             f"As their emergency contact, please press {key} to confirm "
             "you will follow up with them immediately.",
-            voice='alice',
+            voice=_voice(),
         )
         vr.append(gather)
-        vr.say("We did not receive your acknowledgment. Goodbye.", voice='alice')
+        vr.say("We did not receive your acknowledgment. Goodbye.", voice=_voice())
     else:
-        vr.say("Emergency wellness notification. Session not found. Goodbye.", voice='alice')
+        vr.say("Emergency wellness notification. Session not found. Goodbye.", voice=_voice())
 
     return _xml(vr)
 
@@ -195,14 +206,14 @@ def emergency_keypress():
             vr.say(
                 f"Thank you {contact.name}. Your acknowledgment has been recorded. "
                 "Please follow up with the client as soon as possible.",
-                voice='alice',
+                voice=_voice(),
             )
         else:
             log.status = 'wrong-keypress'
-            vr.say("Incorrect key pressed. Goodbye.", voice='alice')
+            vr.say("Incorrect key pressed. Goodbye.", voice=_voice())
         db.session.commit()
     else:
-        vr.say("Session not found. Goodbye.", voice='alice')
+        vr.say("Session not found. Goodbye.", voice=_voice())
 
     return _xml(vr)
 
@@ -257,5 +268,5 @@ def call_status():
 @webhooks_bp.route('/test', methods=['POST'])
 def test_twiml():
     vr = VoiceResponse()
-    vr.say("CareCall test call successful. Your configuration is working correctly.", voice='alice')
+    vr.say("CareCall test call successful. Your configuration is working correctly.", voice=_voice())
     return _xml(vr)

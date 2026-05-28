@@ -560,9 +560,13 @@ async function deleteClientSchedule(id) {
 
 function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
-  document.getElementById('reminderFields').style.display = type === 'reminder' ? '' : 'none';
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
-  // Retry settings (attempts + wait time) always visible for both types
+  // Audio hint differs by type
+  const hint = document.getElementById('audioHint');
+  if (hint) hint.textContent = type === 'wellness'
+    ? '(optional — falls back to text-to-speech if not set)'
+    : '(required — select a recorded file)';
+  // Retry settings always visible for both types
 }
 
 // ── Time picker helpers ────────────────────────────────────────────────────────
