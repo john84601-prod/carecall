@@ -22,10 +22,14 @@ def get_from_number():
     return num
 
 
-def make_call(to_number, answer_url, status_callback_url):
-    """Initiate an outbound call. Returns the Twilio call SID."""
+def make_call(to_number, answer_url, status_callback_url, machine_detection=False):
+    """Initiate an outbound call. Returns the Twilio call SID.
+
+    machine_detection=True enables Twilio AMD — the answer webhook will receive
+    an AnsweredBy parameter: 'human', 'machine_start', 'machine_end_beep', etc.
+    """
     client = get_client()
-    call = client.calls.create(
+    params = dict(
         to=to_number,
         from_=get_from_number(),
         url=answer_url,
@@ -34,5 +38,11 @@ def make_call(to_number, answer_url, status_callback_url):
         status_callback_event=['completed', 'no-answer', 'busy', 'failed'],
         status_callback_method='POST',
     )
+    if machine_detection:
+        # DetectMessageEnd waits for the voicemail beep before firing the
+        # answer webhook, so the message plays after the greeting finishes.
+        params['machine_detection'] = 'DetectMessageEnd'
+
+    call = client.calls.create(**params)
     logger.info(f"Call initiated to {to_number} — SID: {call.sid}")
     return call.sid

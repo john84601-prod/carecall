@@ -49,6 +49,10 @@
         <div class="stat-num" id="statSessions">—</div>
         <div class="stat-label">Active Wellness Sessions</div>
       </div>
+      <div class="stat-card alert" id="reminderSessionCard" style="display:none">
+        <div class="stat-num" id="statReminderSessions">—</div>
+        <div class="stat-label">Reminder Retries In Progress</div>
+      </div>
     </div>
 
     <div class="section-head">
@@ -62,6 +66,20 @@
         </tr></thead>
         <tbody id="logTable"></tbody>
       </table>
+    </div>
+
+    <div id="wellnessSessionsPanel" style="display:none;margin-top:2rem">
+      <div class="section-head">
+        <h2>Recent Wellness Sessions</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Client</th><th>Status</th><th>Attempts</th><th>Started</th><th>Resolved</th><th>Acknowledged By</th>
+          </tr></thead>
+          <tbody id="wellnessSessionsTable"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -270,6 +288,12 @@
         <label>Priority <span class="hint">(1 = first to call)</span></label>
         <input type="number" id="contactPriority" value="1" min="1" max="99">
       </div>
+      <div class="form-group checkbox-row">
+        <label>
+          <input type="checkbox" id="contactCanText">
+          Can receive text messages at this number
+        </label>
+      </div>
       <div class="form-actions">
         <button type="button" class="btn-ghost" onclick="closeOverlay('contactOverlay')">Cancel</button>
         <button type="submit" class="btn-primary">Save</button>
@@ -356,20 +380,18 @@
         </div>
       </div>
 
-      <!-- Call Audio (Reminder) -->
-      <div id="reminderFields">
-        <div class="form-group">
-          <label>Call Audio</label>
-          <div class="row gap-sm">
-            <select id="scheduleMp3" class="flex-1" onchange="resetAudioPreview()">
-              <option value="">— select audio file —</option>
-            </select>
-            <button type="button" class="btn-preview" id="audioPreviewBtn" onclick="toggleAudioPreview()">
-              ▶ Preview
-            </button>
-          </div>
-          <audio id="scheduleAudioPlayer" style="display:none"></audio>
+      <!-- Call Audio (both types — required for Reminder, optional for Wellness) -->
+      <div class="form-group">
+        <label>Call Audio <span class="hint" id="audioHint">(required — select a recorded file)</span></label>
+        <div class="row gap-sm">
+          <select id="scheduleMp3" class="flex-1" onchange="resetAudioPreview()">
+            <option value="">— select audio file —</option>
+          </select>
+          <button type="button" class="btn-preview" id="audioPreviewBtn" onclick="toggleAudioPreview()">
+            ▶ Preview
+          </button>
         </div>
+        <audio id="scheduleAudioPlayer" style="display:none"></audio>
       </div>
 
       <!-- Wellness-only fields -->
@@ -378,15 +400,30 @@
           <label>Required Key Press <span class="hint">(client presses this to confirm they're OK)</span></label>
           <input type="text" id="scheduleKey" value="1" maxlength="1" pattern="[0-9*#]" style="width:80px">
         </div>
-        <div class="row gap-md">
-          <div class="form-group flex-1">
-            <label>Call Attempts</label>
-            <input type="number" id="scheduleMaxAttempts" value="3" min="1" max="20">
+
+        <!-- Per-schedule emergency contacts -->
+        <div class="form-group">
+          <label>Emergency Contacts <span class="hint">(called in this order if client doesn't respond)</span></label>
+          <div id="scheduleEcList" style="margin-bottom:.5rem"></div>
+          <div class="row gap-sm" style="align-items:center">
+            <select id="scheduleEcAdd" class="flex-1">
+              <option value="">— add a contact from the client's list —</option>
+            </select>
+            <button type="button" class="btn-ghost btn-sm" onclick="addScheduleContact()">+ Add</button>
           </div>
-          <div class="form-group flex-1">
-            <label>Call Wait Time <span class="hint">(minutes between attempts)</span></label>
-            <input type="number" id="scheduleInterval" value="10" min="1">
-          </div>
+          <div class="hint" style="margin-top:.35rem" id="scheduleEcHint"></div>
+        </div>
+      </div>
+
+      <!-- Retry settings — shown for both Reminder and Wellness -->
+      <div class="row gap-md">
+        <div class="form-group flex-1">
+          <label>Call Attempts <span class="hint">(max 20)</span></label>
+          <input type="number" id="scheduleMaxAttempts" value="3" min="1" max="20">
+        </div>
+        <div class="form-group flex-1">
+          <label>Wait Between Attempts <span class="hint">(minutes)</span></label>
+          <input type="number" id="scheduleInterval" value="10" min="1">
         </div>
       </div>
 

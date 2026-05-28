@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, CallLog, WellnessSession
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, CallLog, WellnessSession, ReminderSession
 
 api_bp = Blueprint('api', __name__)
 
@@ -96,6 +96,7 @@ def create_contact(client_id):
         phone=data['phone'],
         relationship=data.get('relationship', ''),
         priority=data.get('priority', 1),
+        can_text=bool(data.get('can_text', False)),
     )
     db.session.add(contact)
     db.session.commit()
@@ -110,6 +111,8 @@ def update_contact(contact_id):
     contact.phone = data.get('phone', contact.phone)
     contact.relationship = data.get('relationship', contact.relationship)
     contact.priority = data.get('priority', contact.priority)
+    if 'can_text' in data:
+        contact.can_text = bool(data['can_text'])
     db.session.commit()
     return jsonify(contact.to_dict())
 
@@ -155,7 +158,7 @@ def create_schedule():
         days_of_week=data.get('days_of_week', '0,1,2,3,4,5,6'),
         mp3_filename=data.get('mp3_filename'),
         required_keypress=data.get('required_keypress', '1'),
-        max_attempts=data.get('max_attempts', 3),
+        max_attempts=min(int(data.get('max_attempts', 3)), 20),
         attempt_interval_minutes=data.get('attempt_interval_minutes', 10),
         active=data.get('active', True),
     )
@@ -181,7 +184,8 @@ def update_schedule(schedule_id):
     schedule.days_of_week = data.get('days_of_week', schedule.days_of_week)
     schedule.mp3_filename = data.get('mp3_filename', schedule.mp3_filename)
     schedule.required_keypress = data.get('required_keypress', schedule.required_keypress)
-    schedule.max_attempts = data.get('max_attempts', schedule.max_attempts)
+    if 'max_attempts' in data:
+        schedule.max_attempts = min(int(data['max_attempts']), 20)
     schedule.attempt_interval_minutes = data.get('attempt_interval_minutes', schedule.attempt_interval_minutes)
     schedule.active = data.get('active', schedule.active)
     db.session.commit()
@@ -192,6 +196,23 @@ def update_schedule(schedule_id):
         deactivate_schedule(schedule_id)
 
     return jsonify(schedule.to_dict())
+
+
+@api_bp.route('/schedules/<int:schedule_id>/contacts', methods=['PUT'])
+def set_schedule_contacts(schedule_id):
+    """Replace the full ordered emergency-contact list for a wellness schedule."""
+    db.get_or_404(Schedule, schedule_id)
+    data = request.get_json() or []
+    ScheduleContact.query.filter_by(schedule_id=schedule_id).delete()
+    for i, item in enumerate(data, start=1):
+        sc = ScheduleContact(
+            schedule_id=schedule_id,
+            emergency_contact_id=int(item['emergency_contact_id']),
+            priority=i,
+        )
+        db.session.add(sc)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @api_bp.route('/schedules/<int:schedule_id>', methods=['DELETE'])
@@ -303,6 +324,12 @@ def get_sessions():
     return jsonify([s.to_dict() for s in sessions])
 
 
+@api_bp.route('/reminder-sessions', methods=['GET'])
+def get_reminder_sessions():
+    sessions = ReminderSession.query.order_by(ReminderSession.started_at.desc()).limit(50).all()
+    return jsonify([s.to_dict() for s in sessions])
+
+
 @api_bp.route('/dashboard', methods=['GET'])
 def dashboard():
     from datetime import datetime, timezone
@@ -313,13 +340,19 @@ def dashboard():
     active_sessions = WellnessSession.query.filter(
         WellnessSession.status.in_(['pending', 'calling', 'escalating'])
     ).count()
+    active_reminder_sessions = ReminderSession.query.filter(
+        ReminderSession.status.in_(['pending', 'calling'])
+    ).count()
     recent_logs = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
+    recent_sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(10).all()
     return jsonify({
         'active_clients': active_clients,
         'active_schedules': active_schedules,
         'calls_today': calls_today,
         'active_sessions': active_sessions,
+        'active_reminder_sessions': active_reminder_sessions,
         'recent_logs': [l.to_dict() for l in recent_logs],
+        'recent_sessions': [s.to_dict() for s in recent_sessions],
     })
 
 
@@ -327,11 +360,15 @@ def dashboard():
 
 @api_bp.route('/settings', methods=['GET'])
 def get_settings():
-    from carecall.tunnel import _public_url
+    from carecall.tunnel import get_public_url
+    try:
+        public_url = get_public_url()
+    except Exception:
+        public_url = os.getenv('PUBLIC_URL', '(not available)')
     return jsonify({
         'twilio_account_sid': os.getenv('TWILIO_ACCOUNT_SID', '(not set)'),
         'twilio_from_number': os.getenv('TWILIO_FROM_NUMBER', '(not set)'),
-        'public_url': _public_url or os.getenv('PUBLIC_URL', '(auto-detecting)'),
+        'public_url': public_url,
     })
 
 

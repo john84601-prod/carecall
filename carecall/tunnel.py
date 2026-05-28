@@ -14,7 +14,7 @@ def _try_ngrok(port):
             conf.get_default().auth_token = token
         tunnel = ngrok.connect(port, 'http')
         url = tunnel.public_url
-        # Prefer https
+        # Always use https for the public-facing URL
         return url.replace('http://', 'https://')
     except Exception as e:
         logger.warning(f"ngrok unavailable: {e}")
@@ -29,7 +29,9 @@ def _try_public_ip(port):
         return None
 
 
-def get_public_url(port=5000):
+def get_public_url(port=None):
+    if port is None:
+        port = int(os.getenv('PORT', 5000))
     global _public_url
     if _public_url:
         return _public_url

@@ -39,8 +39,52 @@ def create_app():
         _migrate_client_name_split()
         _migrate_client_address_fields()
         _migrate_client_birthday()
+        _migrate_call_log_reminder_session()
+        _migrate_emergency_contact_can_text()
+        _migrate_wellness_session_acknowledged_by()
 
     return app
+
+
+def _migrate_emergency_contact_can_text():
+    """Add can_text column to emergency_contacts if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('emergency_contacts')]
+    if 'can_text' not in existing:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE emergency_contacts ADD COLUMN can_text BOOLEAN NOT NULL DEFAULT 0"
+            ))
+            conn.commit()
+
+
+def _migrate_wellness_session_acknowledged_by():
+    """Add acknowledged_by_contact_id column to wellness_sessions if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('wellness_sessions')]
+    if 'acknowledged_by_contact_id' not in existing:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE wellness_sessions ADD COLUMN acknowledged_by_contact_id INTEGER "
+                "REFERENCES emergency_contacts(id)"
+            ))
+            conn.commit()
+
+
+def _migrate_call_log_reminder_session():
+    """Add reminder_session_id column to call_logs if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('call_logs')]
+    if 'reminder_session_id' not in existing:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE call_logs ADD COLUMN reminder_session_id INTEGER "
+                "REFERENCES reminder_sessions(id)"
+            ))
+            conn.commit()
 
 
 def _migrate_client_birthday():
