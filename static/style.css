@@ -404,6 +404,56 @@ tr:hover td { background: #f8fafc; }
 }
 .modal-sm   { max-width: 420px; }
 .modal-wide { max-width: 680px; }
+.modal-xl   { max-width: 940px; }
+
+/* ── Collapsible sections (client modal) ─────────────────────────────── */
+.collapsible-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.collapsible-toggle {
+  align-items: center;
+  background: #f8fafc;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-size: .82rem;
+  font-weight: 600;
+  gap: .55rem;
+  padding: .55rem .9rem;
+  text-align: left;
+  transition: background .15s;
+  width: 100%;
+}
+.collapsible-toggle:hover { background: #eef1f5; }
+.caret-char { color: var(--muted); font-size: .7rem; transition: transform .2s; }
+.collapsible-body { padding: .85rem .85rem .25rem; }
+
+/* ── Client inner tabs ───────────────────────────────────────────────── */
+.client-inner-tabs {
+  border-bottom: 2px solid var(--border);
+  display: flex;
+  gap: 0;
+  margin-top: 1rem;
+}
+.client-inner-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 500;
+  margin-bottom: -2px;
+  padding: .55rem 1rem;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.client-inner-tab:hover { color: var(--teal); }
+.client-inner-tab.active { color: var(--teal); border-bottom-color: var(--teal); font-weight: 600; }
+.client-tab-pane { padding-top: .25rem; }
 
 .modal-head {
   align-items: center;

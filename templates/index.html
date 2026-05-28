@@ -187,129 +187,159 @@
 
 <!-- ── Client Modal ───────────────────────────────────────────────────── -->
 <div class="overlay" id="clientOverlay" style="display:none" onclick="closeOverlay('clientOverlay')">
-  <div class="modal modal-wide" onclick="event.stopPropagation()">
+  <div class="modal modal-xl" onclick="event.stopPropagation()">
     <div class="modal-head">
       <h3 id="clientModalTitle">Add Client</h3>
       <button class="close-btn" onclick="closeOverlay('clientOverlay')">✕</button>
     </div>
+
     <form id="clientForm" onsubmit="saveClient(event)">
       <input type="hidden" id="clientId">
-      <div class="row gap-md">
-        <div class="form-group flex-1">
+
+      <!-- Row 1: Name + Phone + Birthday -->
+      <div class="row gap-md" style="align-items:flex-end;margin-bottom:.65rem">
+        <div class="form-group flex-1" style="margin:0">
           <label>First Name *</label>
           <input type="text" id="clientFirstName" required>
         </div>
-        <div class="form-group flex-1">
+        <div class="form-group flex-1" style="margin:0">
           <label>Last Name</label>
           <input type="text" id="clientLastName">
         </div>
-      </div>
-      <div class="form-group">
-        <label>Phone Number * <span class="hint">(E.164 format: +15551234567)</span></label>
-        <input type="tel" id="clientPhone" placeholder="+15551234567" required>
-      </div>
-      <div class="form-group">
-        <label>Birthday</label>
-        <input type="date" id="clientBirthday">
-      </div>
-      <div class="form-group">
-        <label>Address 1</label>
-        <input type="text" id="clientAddress1" placeholder="Street address">
-      </div>
-      <div class="form-group">
-        <label>Address 2</label>
-        <input type="text" id="clientAddress2" placeholder="Apt, suite, unit, etc.">
-      </div>
-      <div class="row gap-md">
-        <div class="form-group flex-1">
-          <label>City</label>
-          <input type="text" id="clientCity">
+        <div class="form-group flex-1" style="margin:0">
+          <label>Phone * <span class="hint">(+15551234567)</span></label>
+          <input type="tel" id="clientPhone" placeholder="+15551234567" required>
         </div>
-        <div class="form-group" style="width:80px">
-          <label>State</label>
-          <input type="text" id="clientState" maxlength="2" placeholder="TX" style="text-transform:uppercase">
-        </div>
-        <div class="form-group" style="width:110px">
-          <label>Zip</label>
-          <input type="text" id="clientZip" maxlength="10" placeholder="12345">
+        <div class="form-group" style="width:155px;margin:0">
+          <label>Birthday</label>
+          <input type="date" id="clientBirthday">
         </div>
       </div>
-      <div class="form-group">
-        <label>Notes</label>
-        <textarea id="clientNotes" rows="2"></textarea>
-      </div>
-      <div class="form-group checkbox-row">
-        <label><input type="checkbox" id="clientActive" checked> Active</label>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-ghost" onclick="closeOverlay('clientOverlay')">Cancel</button>
-        <button type="submit" class="btn-primary">Save Client</button>
-      </div>
-    </form>
 
-    <!-- Call Schedules panel (visible when editing) -->
-    <div id="schedulesPanel" style="display:none">
-      <hr style="margin:1.5rem 0">
-      <div class="section-head">
-        <h4>Call Schedules</h4>
-        <button class="btn-ghost btn-sm" onclick="showAddScheduleModal()">+ Add Schedule</button>
-      </div>
-      <div id="clientSchedulesList"></div>
-    </div>
-
-    <!-- Emergency contacts panel (visible when editing) -->
-    <div id="ecPanel" style="display:none">
-      <hr style="margin:1.5rem 0">
-      <div class="section-head">
-        <h4>Emergency Contacts <span class="hint">(called in priority order if client doesn't respond)</span></h4>
-        <button class="btn-ghost btn-sm" onclick="showContactModal()">+ Add Contact</button>
-      </div>
-      <div id="ecList"></div>
-    </div>
-
-    <!-- Audio files panel (visible when editing) -->
-    <div id="clientAudioPanel" style="display:none">
-      <hr style="margin:1.5rem 0">
-      <div class="section-head">
-        <h4>Audio Files</h4>
-        <div class="action-btns">
-          <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0">
-            ↑ Upload .mp3
-            <input type="file" id="clientAudioUpload" accept=".mp3" style="display:none"
-              onchange="uploadClientAudio(this.files)">
-          </label>
-          <button class="btn-ghost btn-sm" id="clientRecordBtn" onclick="startClientRecording()">
-            <span class="rec-dot" id="clientRecDot" style="display:none;vertical-align:middle"></span>
-            🎤 Record
-          </button>
+      <!-- Row 2: Active toggle + Save/Cancel -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.875rem">
+          <input type="checkbox" id="clientActive" checked> Active
+        </label>
+        <div style="display:flex;gap:.5rem">
+          <button type="button" class="btn-ghost" onclick="closeOverlay('clientOverlay')">Cancel</button>
+          <button type="submit" class="btn-primary">Save Client</button>
         </div>
       </div>
-      <!-- Inline recorder (shown while recording / after stop) -->
-      <div id="clientRecorderPanel" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--surface);border-radius:8px">
-        <div class="record-controls" style="margin-bottom:.5rem">
-          <button id="clientStopBtn" class="btn-stop" onclick="stopClientRecording()" style="display:none">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-            Stop
-          </button>
-          <span id="clientRecordTimer" class="record-timer" style="display:none">00:00</span>
-        </div>
-        <div id="clientRecordPreview" style="display:none">
-          <audio id="clientAudioPreview" controls style="width:100%;margin-bottom:.5rem"></audio>
-          <div class="row gap-sm" style="align-items:flex-end">
+
+      <!-- Collapsible: Address & Notes -->
+      <div class="collapsible-section">
+        <button type="button" class="collapsible-toggle" id="addrNotesToggle"
+          onclick="toggleClientSection('addrNotesBody', this)">
+          <span class="caret-char">▶</span> Address &amp; Notes
+        </button>
+        <div id="addrNotesBody" class="collapsible-body" style="display:none">
+          <div class="row gap-md" style="margin-bottom:.65rem">
             <div class="form-group flex-1" style="margin:0">
-              <label style="font-size:.8rem;color:var(--muted);margin-bottom:.3rem;display:block">Save as</label>
-              <div class="row gap-sm">
-                <input type="text" id="clientRecordName" placeholder="e.g. medication-reminder" class="flex-1">
-                <span style="align-self:center;color:var(--muted);white-space:nowrap">.mp3</span>
-              </div>
+              <label>Address</label>
+              <input type="text" id="clientAddress1" placeholder="Street address">
             </div>
-            <button type="button" class="btn-primary btn-sm" onclick="saveClientRecording()">Save</button>
-            <button type="button" class="btn-ghost btn-sm" onclick="discardClientRecording()">Discard</button>
+            <div class="form-group flex-1" style="margin:0">
+              <label>Address 2 <span class="hint">(apt, suite, etc.)</span></label>
+              <input type="text" id="clientAddress2">
+            </div>
+          </div>
+          <div class="row gap-md" style="margin-bottom:.65rem">
+            <div class="form-group flex-1" style="margin:0">
+              <label>City</label>
+              <input type="text" id="clientCity">
+            </div>
+            <div class="form-group" style="width:72px;margin:0">
+              <label>State</label>
+              <input type="text" id="clientState" maxlength="2" placeholder="TX" style="text-transform:uppercase">
+            </div>
+            <div class="form-group" style="width:115px;margin:0">
+              <label>Zip</label>
+              <input type="text" id="clientZip" maxlength="10" placeholder="12345">
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Notes</label>
+            <textarea id="clientNotes" rows="2"></textarea>
           </div>
         </div>
       </div>
-      <div id="clientAudioList"></div>
+    </form>
+
+    <!-- Tabbed panels (visible when editing an existing client) -->
+    <div id="clientTabsSection" style="display:none">
+      <div class="client-inner-tabs">
+        <button class="client-inner-tab active" id="clientTab-schedules"
+          onclick="switchClientTab('schedules')">📅 Schedules</button>
+        <button class="client-inner-tab" id="clientTab-contacts"
+          onclick="switchClientTab('contacts')">👥 Contacts</button>
+        <button class="client-inner-tab" id="clientTab-audio"
+          onclick="switchClientTab('audio')">🎵 Audio</button>
+      </div>
+
+      <!-- Schedules pane -->
+      <div id="clientPane-schedules" class="client-tab-pane">
+        <div class="section-head" style="margin-top:.65rem;margin-bottom:.5rem">
+          <h4>Call Schedules</h4>
+          <button class="btn-ghost btn-sm" onclick="showAddScheduleModal()">+ Add Schedule</button>
+        </div>
+        <div id="clientSchedulesList"></div>
+      </div>
+
+      <!-- Contacts pane -->
+      <div id="clientPane-contacts" class="client-tab-pane" style="display:none">
+        <div class="section-head" style="margin-top:.65rem;margin-bottom:.5rem">
+          <h4>Emergency Contacts
+            <span class="hint" style="font-weight:400">(called in order if client doesn't respond)</span>
+          </h4>
+          <button class="btn-ghost btn-sm" onclick="showContactModal()">+ Add Contact</button>
+        </div>
+        <div id="ecList"></div>
+      </div>
+
+      <!-- Audio pane -->
+      <div id="clientPane-audio" class="client-tab-pane" style="display:none">
+        <div class="section-head" style="margin-top:.65rem;margin-bottom:.5rem">
+          <h4>Audio Files</h4>
+          <div class="action-btns">
+            <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0">
+              ↑ Upload .mp3
+              <input type="file" id="clientAudioUpload" accept=".mp3" style="display:none"
+                onchange="uploadClientAudio(this.files)">
+            </label>
+            <button class="btn-ghost btn-sm" id="clientRecordBtn" onclick="startClientRecording()">
+              <span class="rec-dot" id="clientRecDot" style="display:none;vertical-align:middle"></span>
+              🎤 Record
+            </button>
+          </div>
+        </div>
+        <div id="clientRecorderPanel" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f8fafc;border:1px solid var(--border);border-radius:8px">
+          <div class="record-controls" style="margin-bottom:.5rem">
+            <button id="clientStopBtn" class="btn-stop" onclick="stopClientRecording()" style="display:none">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              Stop
+            </button>
+            <span id="clientRecordTimer" class="record-timer" style="display:none">00:00</span>
+          </div>
+          <div id="clientRecordPreview" style="display:none">
+            <audio id="clientAudioPreview" controls style="width:100%;margin-bottom:.5rem"></audio>
+            <div class="row gap-sm" style="align-items:flex-end">
+              <div class="form-group flex-1" style="margin:0">
+                <label style="font-size:.8rem;color:var(--muted);margin-bottom:.3rem;display:block">Save as</label>
+                <div class="row gap-sm">
+                  <input type="text" id="clientRecordName" placeholder="e.g. medication-reminder" class="flex-1">
+                  <span style="align-self:center;color:var(--muted);white-space:nowrap">.mp3</span>
+                </div>
+              </div>
+              <button type="button" class="btn-primary btn-sm" onclick="saveClientRecording()">Save</button>
+              <button type="button" class="btn-ghost btn-sm" onclick="discardClientRecording()">Discard</button>
+            </div>
+          </div>
+        </div>
+        <div id="clientAudioList"></div>
+      </div>
     </div>
+
   </div>
 </div>
 

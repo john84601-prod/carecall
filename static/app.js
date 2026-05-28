@@ -206,9 +206,10 @@ function showClientModal(client) {
   document.getElementById('clientZip').value = '';
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
-  document.getElementById('schedulesPanel').style.display = 'none';
-  document.getElementById('ecPanel').style.display = 'none';
-  document.getElementById('clientAudioPanel').style.display = 'none';
+  document.getElementById('clientTabsSection').style.display = 'none';
+  // Collapse address section for a clean blank form
+  document.getElementById('addrNotesBody').style.display = 'none';
+  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = '▶';
   openOverlay('clientOverlay');
 }
 
@@ -229,9 +230,12 @@ async function editClient(id) {
   document.getElementById('clientZip').value = c.zip_code || '';
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
-  document.getElementById('schedulesPanel').style.display = '';
-  document.getElementById('ecPanel').style.display = '';
-  document.getElementById('clientAudioPanel').style.display = '';
+  document.getElementById('clientTabsSection').style.display = '';
+  switchClientTab('schedules');
+  // Auto-expand address section if client has address or notes data
+  const hasAddress = c.address1 || c.address2 || c.city || c.state || c.zip_code || c.notes;
+  document.getElementById('addrNotesBody').style.display = hasAddress ? '' : 'none';
+  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = hasAddress ? '▼' : '▶';
   await Promise.all([loadClientSchedules(id), loadContactsList(id), loadClientAudio(id)]);
   openOverlay('clientOverlay');
 }
@@ -261,9 +265,9 @@ async function saveClient(e) {
       currentClientId = created.id;
       document.getElementById('clientId').value = created.id;
       document.getElementById('clientModalTitle').textContent = 'Edit Client';
-      document.getElementById('ecPanel').style.display = '';
-      document.getElementById('clientAudioPanel').style.display = '';
-      await Promise.all([loadContactsList(created.id), loadClientAudio(created.id)]);
+      document.getElementById('clientTabsSection').style.display = '';
+      switchClientTab('schedules');
+      await Promise.all([loadClientSchedules(created.id), loadContactsList(created.id), loadClientAudio(created.id)]);
       toast('Client created', 'success');
     }
     await loadClients();
@@ -281,6 +285,23 @@ async function deleteClient(id, name) {
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+// ── Client modal helpers ──────────────────────────────────────────────────────
+
+function switchClientTab(tab) {
+  ['schedules', 'contacts', 'audio'].forEach(t => {
+    document.getElementById(`clientTab-${t}`).classList.toggle('active', t === tab);
+    document.getElementById(`clientPane-${t}`).style.display = t === tab ? '' : 'none';
+  });
+}
+
+function toggleClientSection(bodyId, btn) {
+  const body = document.getElementById(bodyId);
+  const caret = btn.querySelector('.caret-char');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  if (caret) caret.textContent = isOpen ? '▶' : '▼';
 }
 
 // ── Emergency contacts ────────────────────────────────────────────────────────
