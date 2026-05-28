@@ -110,7 +110,13 @@
 
   <!-- ── Audio Files ────────────────────────────────────────────────── -->
   <section id="tab-audio" class="tab">
-    <div class="section-head"><h2>Audio Files (.mp3)</h2></div>
+    <div class="section-head">
+      <h2>Audio Files (.mp3)</h2>
+      <div class="row gap-sm" style="align-items:center">
+        <input type="search" id="audioSearch" placeholder="Search by client name, phone, or filename…"
+          style="width:300px" oninput="filterAudio(this.value)">
+      </div>
+    </div>
 
     <!-- Record from microphone -->
     <div class="record-panel">
@@ -259,6 +265,50 @@
         <button class="btn-ghost btn-sm" onclick="showContactModal()">+ Add Contact</button>
       </div>
       <div id="ecList"></div>
+    </div>
+
+    <!-- Audio files panel (visible when editing) -->
+    <div id="clientAudioPanel" style="display:none">
+      <hr style="margin:1.5rem 0">
+      <div class="section-head">
+        <h4>Audio Files</h4>
+        <div class="action-btns">
+          <label class="btn-ghost btn-sm" style="cursor:pointer;margin:0">
+            ↑ Upload .mp3
+            <input type="file" id="clientAudioUpload" accept=".mp3" style="display:none"
+              onchange="uploadClientAudio(this.files)">
+          </label>
+          <button class="btn-ghost btn-sm" id="clientRecordBtn" onclick="startClientRecording()">
+            <span class="rec-dot" id="clientRecDot" style="display:none;vertical-align:middle"></span>
+            🎤 Record
+          </button>
+        </div>
+      </div>
+      <!-- Inline recorder (shown while recording / after stop) -->
+      <div id="clientRecorderPanel" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--surface);border-radius:8px">
+        <div class="record-controls" style="margin-bottom:.5rem">
+          <button id="clientStopBtn" class="btn-stop" onclick="stopClientRecording()" style="display:none">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            Stop
+          </button>
+          <span id="clientRecordTimer" class="record-timer" style="display:none">00:00</span>
+        </div>
+        <div id="clientRecordPreview" style="display:none">
+          <audio id="clientAudioPreview" controls style="width:100%;margin-bottom:.5rem"></audio>
+          <div class="row gap-sm" style="align-items:flex-end">
+            <div class="form-group flex-1" style="margin:0">
+              <label style="font-size:.8rem;color:var(--muted);margin-bottom:.3rem;display:block">Save as</label>
+              <div class="row gap-sm">
+                <input type="text" id="clientRecordName" placeholder="e.g. medication-reminder" class="flex-1">
+                <span style="align-self:center;color:var(--muted);white-space:nowrap">.mp3</span>
+              </div>
+            </div>
+            <button type="button" class="btn-primary btn-sm" onclick="saveClientRecording()">Save</button>
+            <button type="button" class="btn-ghost btn-sm" onclick="discardClientRecording()">Discard</button>
+          </div>
+        </div>
+      </div>
+      <div id="clientAudioList"></div>
     </div>
   </div>
 </div>

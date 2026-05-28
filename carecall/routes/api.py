@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, CallLog, WellnessSession, ReminderSession
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession
 
 api_bp = Blueprint('api', __name__)
 
@@ -229,9 +229,26 @@ def delete_schedule(schedule_id):
 
 @api_bp.route('/uploads', methods=['GET'])
 def list_uploads():
-    folder = current_app.config['UPLOAD_FOLDER']
-    files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.mp3'))
-    return jsonify(files)
+    """Return all audio files. Optional ?client_id=N to filter to one client only.
+    Optional ?q=text for a search across filename, display name, client name/phone."""
+    client_id = request.args.get('client_id', type=int)
+    q = request.args.get('q', '').strip().lower()
+
+    query = AudioFile.query
+    if client_id is not None:
+        query = query.filter_by(client_id=client_id)
+
+    # Global files first, then client files; alphabetical within each group
+    files = query.order_by(AudioFile.client_id.is_(None).desc(), AudioFile.display_name).all()
+
+    if q:
+        files = [f for f in files if
+                 q in f.filename.lower() or
+                 q in (f.display_name or '').lower() or
+                 (f.client and q in f.client.full_name.lower()) or
+                 (f.client and q in (f.client.phone or '').lower())]
+
+    return jsonify([f.to_dict() for f in files])
 
 
 @api_bp.route('/uploads', methods=['POST'])
@@ -241,9 +258,25 @@ def upload_file():
     f = request.files['file']
     if not f.filename or not f.filename.lower().endswith('.mp3'):
         return jsonify({'error': 'Only .mp3 files are accepted'}), 400
+
+    client_id   = request.form.get('client_id',   type=int)
+    display_name = request.form.get('display_name', '').strip()
     filename = re.sub(r'[^\w\-.]', '_', f.filename)
     f.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
-    return jsonify({'filename': filename}), 201
+
+    if not display_name:
+        display_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+
+    # Upsert AudioFile record
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        af.client_id    = client_id
+        af.display_name = display_name
+    else:
+        af = AudioFile(filename=filename, display_name=display_name, client_id=client_id)
+        db.session.add(af)
+    db.session.commit()
+    return jsonify(af.to_dict()), 201
 
 
 @api_bp.route('/uploads/<filename>', methods=['DELETE'])
@@ -251,6 +284,10 @@ def delete_upload(filename):
     path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
     if os.path.isfile(path):
         os.remove(path)
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        db.session.delete(af)
+        db.session.commit()
     return '', 204
 
 
@@ -263,8 +300,11 @@ def save_recording():
     if 'audio' not in request.files:
         return jsonify({'error': 'No audio data received'}), 400
 
-    audio_file = request.files['audio']
-    name = request.form.get('name', '').strip()
+    audio_file   = request.files['audio']
+    name         = request.form.get('name', '').strip()
+    client_id    = request.form.get('client_id', type=int)
+    display_name = request.form.get('display_name', '').strip() or name
+
     if not name:
         return jsonify({'error': 'Filename is required'}), 400
 
@@ -306,7 +346,16 @@ def save_recording():
         except OSError:
             pass
 
-    return jsonify({'filename': filename}), 201
+    # Upsert AudioFile record
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        af.client_id    = client_id
+        af.display_name = display_name
+    else:
+        af = AudioFile(filename=filename, display_name=display_name, client_id=client_id)
+        db.session.add(af)
+    db.session.commit()
+    return jsonify(af.to_dict()), 201
 
 
 # ── Call logs & sessions ───────────────────────────────────────────────────────

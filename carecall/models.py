@@ -27,6 +27,8 @@ class Client(db.Model):
     call_logs = db.relationship('CallLog', back_populates='client', cascade='all, delete-orphan')
     wellness_sessions = db.relationship('WellnessSession', back_populates='client', cascade='all, delete-orphan')
     reminder_sessions = db.relationship('ReminderSession', back_populates='client', cascade='all, delete-orphan')
+    audio_files = db.relationship('AudioFile', back_populates='client',
+                                  foreign_keys='AudioFile.client_id', passive_deletes=True)
 
     @property
     def full_name(self):
@@ -230,6 +232,29 @@ class ReminderSession(db.Model):
             'current_attempt': self.current_attempt,
             'started_at':      self.started_at.isoformat()  + 'Z' if self.started_at  else None,
             'resolved_at':     self.resolved_at.isoformat() + 'Z' if self.resolved_at else None,
+        }
+
+
+class AudioFile(db.Model):
+    """Audio file optionally associated with a specific client."""
+    __tablename__ = 'audio_files'
+    id           = db.Column(db.Integer, primary_key=True)
+    client_id    = db.Column(db.Integer, db.ForeignKey('clients.id', ondelete='SET NULL'), nullable=True)
+    filename     = db.Column(db.String(255), nullable=False, unique=True)
+    display_name = db.Column(db.String(255), default='')
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    client = db.relationship('Client', foreign_keys=[client_id], back_populates='audio_files')
+
+    def to_dict(self):
+        return {
+            'id':           self.id,
+            'client_id':    self.client_id,
+            'client_name':  self.client.full_name if self.client else None,
+            'client_phone': self.client.phone     if self.client else None,
+            'filename':     self.filename,
+            'display_name': self.display_name or self.filename,
+            'created_at':   self.created_at.isoformat() + 'Z',
         }
 
 
