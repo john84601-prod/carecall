@@ -39,7 +39,9 @@ def make_call(to_number, answer_url, status_callback_url, machine_detection=Fals
         status_callback_method='POST',
     )
     if machine_detection:
-        params['machine_detection'] = 'Enable'
+        # DetectMessageEnd waits for the voicemail beep before firing the
+        # answer webhook, so the message plays after the greeting finishes.
+        params['machine_detection'] = 'DetectMessageEnd'
 
     call = client.calls.create(**params)
     logger.info(f"Call initiated to {to_number} — SID: {call.sid}")
