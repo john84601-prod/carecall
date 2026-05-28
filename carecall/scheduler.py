@@ -338,7 +338,7 @@ def _schedule_wellness_retry(session_id, delay_minutes):
 
 def _call_next_emergency_contact(session_id):
     with _app.app_context():
-        from carecall.models import WellnessSession, EmergencyContact, CallLog, db
+        from carecall.models import WellnessSession, EmergencyContact, ScheduleContact, CallLog, db
         from carecall.twilio_client import make_call
         from carecall.tunnel import get_public_url
 
@@ -347,10 +347,24 @@ def _call_next_emergency_contact(session_id):
             return
 
         already_called = session.get_contacts_called()
-        query = EmergencyContact.query.filter_by(client_id=session.client_id)
-        if already_called:
-            query = query.filter(EmergencyContact.id.notin_(already_called))
-        next_contact = query.order_by(EmergencyContact.priority).first()
+
+        # Use the schedule's own ordered contact list if configured; fall back
+        # to all client contacts (old behaviour) so existing sessions still work.
+        sched_contacts = (ScheduleContact.query
+                          .filter_by(schedule_id=session.schedule_id)
+                          .order_by(ScheduleContact.priority)
+                          .all())
+        if sched_contacts:
+            next_sc = next(
+                (sc for sc in sched_contacts if sc.emergency_contact_id not in already_called),
+                None,
+            )
+            next_contact = next_sc.contact if next_sc else None
+        else:
+            query = EmergencyContact.query.filter_by(client_id=session.client_id)
+            if already_called:
+                query = query.filter(EmergencyContact.id.notin_(already_called))
+            next_contact = query.order_by(EmergencyContact.priority).first()
 
         if not next_contact:
             session.status = 'failed'

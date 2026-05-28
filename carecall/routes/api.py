@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, CallLog, WellnessSession, ReminderSession
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, CallLog, WellnessSession, ReminderSession
 
 api_bp = Blueprint('api', __name__)
 
@@ -196,6 +196,23 @@ def update_schedule(schedule_id):
         deactivate_schedule(schedule_id)
 
     return jsonify(schedule.to_dict())
+
+
+@api_bp.route('/schedules/<int:schedule_id>/contacts', methods=['PUT'])
+def set_schedule_contacts(schedule_id):
+    """Replace the full ordered emergency-contact list for a wellness schedule."""
+    db.get_or_404(Schedule, schedule_id)
+    data = request.get_json() or []
+    ScheduleContact.query.filter_by(schedule_id=schedule_id).delete()
+    for i, item in enumerate(data, start=1):
+        sc = ScheduleContact(
+            schedule_id=schedule_id,
+            emergency_contact_id=int(item['emergency_contact_id']),
+            priority=i,
+        )
+        db.session.add(sc)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @api_bp.route('/schedules/<int:schedule_id>', methods=['DELETE'])

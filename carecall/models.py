@@ -104,6 +104,10 @@ class Schedule(db.Model):
     call_logs = db.relationship('CallLog', back_populates='schedule')
     wellness_sessions = db.relationship('WellnessSession', back_populates='schedule')
     reminder_sessions = db.relationship('ReminderSession', back_populates='schedule')
+    schedule_contacts = db.relationship(
+        'ScheduleContact', back_populates='schedule',
+        order_by='ScheduleContact.priority', cascade='all, delete-orphan'
+    )
 
     def to_dict(self):
         return {
@@ -119,7 +123,31 @@ class Schedule(db.Model):
             'required_keypress': self.required_keypress,
             'max_attempts': self.max_attempts,
             'attempt_interval_minutes': self.attempt_interval_minutes,
+            'schedule_contacts': [
+                {
+                    'id': sc.id,
+                    'emergency_contact_id': sc.emergency_contact_id,
+                    'name': sc.contact.name,
+                    'phone': sc.contact.phone,
+                    'relationship': sc.contact.relationship or '',
+                    'can_text': sc.contact.can_text,
+                    'priority': sc.priority,
+                }
+                for sc in self.schedule_contacts
+            ],
         }
+
+
+class ScheduleContact(db.Model):
+    """Emergency contact assigned to a specific wellness schedule with a per-schedule call order."""
+    __tablename__ = 'schedule_emergency_contacts'
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_id          = db.Column(db.Integer, db.ForeignKey('schedules.id'),          nullable=False)
+    emergency_contact_id = db.Column(db.Integer, db.ForeignKey('emergency_contacts.id'), nullable=False)
+    priority = db.Column(db.Integer, default=1)
+
+    schedule = db.relationship('Schedule', back_populates='schedule_contacts')
+    contact  = db.relationship('EmergencyContact')
 
 
 class WellnessSession(db.Model):

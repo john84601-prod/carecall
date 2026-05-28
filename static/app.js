@@ -3,6 +3,8 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let allClients = [];
 let currentClientId = null;   // client being edited in modal
+let scheduleContacts = [];    // ordered list for the schedule being edited
+let clientContactsCache = []; // client's full emergency contact list (loaded when schedule modal opens)
 
 // Recording state
 let mediaRecorder = null;
@@ -428,7 +430,7 @@ function renderClientSchedules(schedules) {
 
 async function showAddScheduleModal() {
   _initTimePicker();
-  await populateAudioSelect();
+  await Promise.all([populateAudioSelect(), _loadClientContactsCache()]);
   document.getElementById('scheduleModalTitle').textContent = 'Add Call Schedule';
   document.getElementById('scheduleId').value = '';
   document.getElementById('scheduleClientId').value = currentClientId;
@@ -444,6 +446,7 @@ async function showAddScheduleModal() {
   document.getElementById('scheduleKey').value = '1';
   document.getElementById('scheduleMaxAttempts').value = 3;
   document.getElementById('scheduleInterval').value = 10;
+  scheduleContacts = [];
   resetAudioPreview();
   toggleScheduleFields();
   openOverlay('scheduleOverlay');
@@ -451,7 +454,7 @@ async function showAddScheduleModal() {
 
 async function editClientSchedule(id) {
   _initTimePicker();
-  await populateAudioSelect();
+  await Promise.all([populateAudioSelect(), _loadClientContactsCache()]);
   try {
     const schedules = await api('GET', `/clients/${currentClientId}/schedules`);
     const s = schedules.find(x => x.id === id);
@@ -482,6 +485,15 @@ async function editClientSchedule(id) {
     document.getElementById('scheduleKey').value          = s.required_keypress || '1';
     document.getElementById('scheduleMaxAttempts').value  = s.max_attempts || 3;
     document.getElementById('scheduleInterval').value     = s.attempt_interval_minutes || 10;
+
+    // Load per-schedule emergency contacts
+    scheduleContacts = (s.schedule_contacts || []).map(sc => ({
+      emergency_contact_id: sc.emergency_contact_id,
+      name: sc.name,
+      phone: sc.phone,
+      relationship: sc.relationship || '',
+      can_text: sc.can_text,
+    }));
 
     resetAudioPreview();
     toggleScheduleFields();
@@ -522,12 +534,20 @@ async function saveSchedule(e) {
   };
 
   try {
+    let scheduleId = id;
     if (id) {
       await api('PUT', `/schedules/${id}`, payload);
       toast('Schedule updated', 'success');
     } else {
-      await api('POST', '/schedules', payload);
+      const created = await api('POST', '/schedules', payload);
+      scheduleId = created.id;
       toast('Schedule created', 'success');
+    }
+    // Save per-schedule emergency contacts (wellness only)
+    if (callType === 'wellness') {
+      await api('PUT', `/schedules/${scheduleId}/contacts`,
+        scheduleContacts.map(c => ({ emergency_contact_id: c.emergency_contact_id }))
+      );
     }
     closeOverlay('scheduleOverlay');
     await loadClientSchedules(currentClientId);
@@ -566,7 +586,90 @@ function toggleScheduleFields() {
   if (hint) hint.textContent = type === 'wellness'
     ? '(optional — falls back to text-to-speech if not set)'
     : '(required — select a recorded file)';
-  // Retry settings always visible for both types
+  if (type === 'wellness') renderScheduleEcList();
+}
+
+// ── Schedule emergency contacts ───────────────────────────────────────────────
+
+async function _loadClientContactsCache() {
+  if (!currentClientId) return;
+  try {
+    clientContactsCache = await api('GET', `/clients/${currentClientId}/contacts`);
+  } catch (_) {
+    clientContactsCache = [];
+  }
+}
+
+function renderScheduleEcList() {
+  const el = document.getElementById('scheduleEcList');
+  if (!el) return;
+
+  if (!scheduleContacts.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.25rem 0">None assigned — will fall back to the client\'s contact list.</div>';
+  } else {
+    el.innerHTML = scheduleContacts.map((c, i) => `
+      <div class="ec-item" style="margin-bottom:.3rem">
+        <span class="ec-priority">${i + 1}</span>
+        <span style="flex:1">
+          <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
+          <br><span style="color:var(--muted);font-size:.82rem">${esc(c.phone)}</span>
+        </span>
+        <div class="action-btns">
+          <button type="button" class="btn-ghost btn-sm" title="Move up"
+            onclick="moveScheduleContact(${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+          <button type="button" class="btn-ghost btn-sm" title="Move down"
+            onclick="moveScheduleContact(${i}, 1)" ${i === scheduleContacts.length - 1 ? 'disabled' : ''}>▼</button>
+          <button type="button" class="btn-danger btn-sm" onclick="removeScheduleContact(${i})">✕</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Refresh dropdown to show only unassigned contacts
+  const assignedIds = new Set(scheduleContacts.map(c => c.emergency_contact_id));
+  const available = clientContactsCache.filter(c => !assignedIds.has(c.id));
+  const sel = document.getElementById('scheduleEcAdd');
+  if (sel) {
+    sel.innerHTML = '<option value="">— add a contact from the client\'s list —</option>' +
+      available.map(c =>
+        `<option value="${c.id}">${esc(c.name)}${c.relationship ? ' (' + esc(c.relationship) + ')' : ''}</option>`
+      ).join('');
+  }
+
+  const hint = document.getElementById('scheduleEcHint');
+  if (hint) {
+    hint.textContent = clientContactsCache.length === 0
+      ? 'Add emergency contacts to this client\'s profile first.'
+      : '';
+  }
+}
+
+function addScheduleContact() {
+  const sel = document.getElementById('scheduleEcAdd');
+  const id = parseInt(sel.value);
+  if (!id) return;
+  const contact = clientContactsCache.find(c => c.id === id);
+  if (!contact) return;
+  scheduleContacts.push({
+    emergency_contact_id: contact.id,
+    name: contact.name,
+    phone: contact.phone,
+    relationship: contact.relationship || '',
+    can_text: contact.can_text,
+  });
+  renderScheduleEcList();
+}
+
+function moveScheduleContact(index, dir) {
+  const newIndex = index + dir;
+  if (newIndex < 0 || newIndex >= scheduleContacts.length) return;
+  [scheduleContacts[index], scheduleContacts[newIndex]] =
+    [scheduleContacts[newIndex], scheduleContacts[index]];
+  renderScheduleEcList();
+}
+
+function removeScheduleContact(index) {
+  scheduleContacts.splice(index, 1);
+  renderScheduleEcList();
 }
 
 // ── Time picker helpers ────────────────────────────────────────────────────────

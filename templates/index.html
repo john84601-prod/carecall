@@ -400,6 +400,19 @@
           <label>Required Key Press <span class="hint">(client presses this to confirm they're OK)</span></label>
           <input type="text" id="scheduleKey" value="1" maxlength="1" pattern="[0-9*#]" style="width:80px">
         </div>
+
+        <!-- Per-schedule emergency contacts -->
+        <div class="form-group">
+          <label>Emergency Contacts <span class="hint">(called in this order if client doesn't respond)</span></label>
+          <div id="scheduleEcList" style="margin-bottom:.5rem"></div>
+          <div class="row gap-sm" style="align-items:center">
+            <select id="scheduleEcAdd" class="flex-1">
+              <option value="">— add a contact from the client's list —</option>
+            </select>
+            <button type="button" class="btn-ghost btn-sm" onclick="addScheduleContact()">+ Add</button>
+          </div>
+          <div class="hint" style="margin-top:.35rem" id="scheduleEcHint"></div>
+        </div>
       </div>
 
       <!-- Retry settings — shown for both Reminder and Wellness -->
