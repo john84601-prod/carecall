@@ -404,6 +404,7 @@ tr:hover td { background: #f8fafc; }
 }
 .modal-sm   { max-width: 420px; }
 .modal-wide { max-width: 680px; }
+.modal-lg   { max-width: 760px; }
 .modal-xl   { max-width: 940px; }
 
 /* ── Collapsible sections (client modal) ─────────────────────────────── */
@@ -594,39 +595,38 @@ hr { border: none; border-top: 1px solid var(--border); }
 }
 .toggle:checked::after { left: 19px; }
 
-/* ── Call type toggle ────────────────────────────────────────────────── */
-.call-type-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .75rem;
-}
-
-.call-type-option {
-  cursor: pointer;
-  display: block;
-}
-.call-type-option input[type=radio] { display: none; }
-
-.call-type-body {
-  align-items: center;
-  border: 2px solid var(--border);
+/* ── Call type segmented control ─────────────────────────────────────── */
+.call-type-seg {
+  border: 1.5px solid var(--border);
   border-radius: var(--radius);
   display: flex;
-  flex-direction: column;
-  gap: .3rem;
-  padding: 1rem;
-  text-align: center;
-  transition: border-color .15s, background .15s;
+  overflow: hidden;
 }
-.call-type-body svg { color: var(--muted); }
-.call-type-body span { font-weight: 600; font-size: .9rem; }
-.call-type-body small { color: var(--muted); font-size: .75rem; }
-
-.call-type-option input:checked + .call-type-body {
-  border-color: var(--teal);
-  background: #eef7fb;
+.call-type-seg-opt {
+  cursor: pointer;
+  flex: 1;
 }
-.call-type-option input:checked + .call-type-body svg { color: var(--teal); }
+.call-type-seg-opt input[type=radio] { display: none; }
+.cseg-body {
+  align-items: center;
+  border-right: 1.5px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  font-size: .875rem;
+  font-weight: 500;
+  gap: .5rem;
+  justify-content: center;
+  padding: .55rem 1rem;
+  transition: background .15s, color .15s;
+}
+.call-type-seg-opt:last-child .cseg-body { border-right: none; }
+.cseg-body small { font-size: .75rem; color: var(--muted); }
+.call-type-seg-opt input:checked + .cseg-body {
+  background: var(--teal);
+  color: #fff;
+}
+.call-type-seg-opt input:checked + .cseg-body small { color: rgba(255,255,255,.75); }
+.call-type-seg-opt input:checked + .cseg-body svg { stroke: #fff; }
 
 /* ── Status toggle row ───────────────────────────────────────────────── */
 .status-toggle-row {

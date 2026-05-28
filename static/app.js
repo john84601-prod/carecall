@@ -595,6 +595,11 @@ async function showAddScheduleModal() {
   document.getElementById('scheduleMaxAttempts').value = 3;
   document.getElementById('scheduleInterval').value = 10;
   scheduleContacts = [];
+  // Collapse EC section for a fresh form
+  const schedEcBody = document.getElementById('schedEcBody');
+  const schedEcTog  = document.getElementById('schedEcToggle');
+  if (schedEcBody) schedEcBody.style.display = 'none';
+  if (schedEcTog)  schedEcTog.querySelector('.caret-char').textContent = '▶';
   resetAudioPreview();
   toggleScheduleFields();
   openOverlay('scheduleOverlay');
@@ -642,6 +647,13 @@ async function editClientSchedule(id) {
       relationship: sc.relationship || '',
       can_text: sc.can_text,
     }));
+
+    // Reset then conditionally expand EC collapsible
+    const schedEcBody = document.getElementById('schedEcBody');
+    const schedEcTog  = document.getElementById('schedEcToggle');
+    const hasEcContacts = scheduleContacts.length > 0 && s.call_type === 'wellness';
+    if (schedEcBody) schedEcBody.style.display = hasEcContacts ? '' : 'none';
+    if (schedEcTog)  schedEcTog.querySelector('.caret-char').textContent = hasEcContacts ? '▼' : '▶';
 
     resetAudioPreview();
     toggleScheduleFields();
@@ -729,12 +741,20 @@ async function deleteClientSchedule(id) {
 function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
-  // Audio hint differs by type
   const hint = document.getElementById('audioHint');
   if (hint) hint.textContent = type === 'wellness'
     ? '(optional — falls back to text-to-speech if not set)'
     : '(required — select a recorded file)';
-  if (type === 'wellness') renderScheduleEcList();
+  if (type === 'wellness') {
+    renderScheduleEcList();
+    // Auto-expand EC collapsible if contacts are already assigned
+    if (scheduleContacts.length > 0) {
+      const body = document.getElementById('schedEcBody');
+      const tog  = document.getElementById('schedEcToggle');
+      if (body) body.style.display = '';
+      if (tog)  tog.querySelector('.caret-char').textContent = '▼';
+    }
+  }
 }
 
 // ── Schedule emergency contacts ───────────────────────────────────────────────
@@ -751,6 +771,12 @@ async function _loadClientContactsCache() {
 function renderScheduleEcList() {
   const el = document.getElementById('scheduleEcList');
   if (!el) return;
+
+  // Update count badge in collapsible header
+  const countEl = document.getElementById('schedEcCount');
+  if (countEl) countEl.textContent = scheduleContacts.length
+    ? `(${scheduleContacts.length} assigned)`
+    : '(none — uses client contact list)';
 
   if (!scheduleContacts.length) {
     el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.25rem 0">None assigned — will fall back to the client\'s contact list.</div>';
