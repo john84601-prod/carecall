@@ -47,7 +47,7 @@ class Client(db.Model):
             'birthday': self.birthday.isoformat() if self.birthday else None,
             'active': self.active,
             'notes': self.notes,
-            'created_at': self.created_at.isoformat(),
+            'created_at': self.created_at.isoformat() + 'Z',
             'emergency_contacts': [c.to_dict() for c in self.emergency_contacts],
         }
 
@@ -169,8 +169,8 @@ class WellnessSession(db.Model):
             'acknowledged_by_contact_id':   self.acknowledged_by_contact_id,
             'acknowledged_by_contact_name': ack_contact.name  if ack_contact else None,
             'acknowledged_by_contact_phone': ack_contact.phone if ack_contact else None,
-            'started_at':  self.started_at.isoformat(),
-            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'started_at':  self.started_at.isoformat() + 'Z',
+            'resolved_at': self.resolved_at.isoformat() + 'Z' if self.resolved_at else None,
         }
 
 
@@ -200,8 +200,8 @@ class ReminderSession(db.Model):
             'schedule_name':   self.schedule.name    if self.schedule else '',
             'status':          self.status,
             'current_attempt': self.current_attempt,
-            'started_at':      self.started_at.isoformat()  if self.started_at  else None,
-            'resolved_at':     self.resolved_at.isoformat() if self.resolved_at else None,
+            'started_at':      self.started_at.isoformat()  + 'Z' if self.started_at  else None,
+            'resolved_at':     self.resolved_at.isoformat() + 'Z' if self.resolved_at else None,
         }
 
 
@@ -239,6 +239,6 @@ class CallLog(db.Model):
             'attempt_number': self.attempt_number,
             'status': self.status,
             'keypress_received': self.keypress_received,
-            'timestamp': self.timestamp.isoformat(),
+            'timestamp': self.timestamp.isoformat() + 'Z',
             'notes': self.notes,
         }
