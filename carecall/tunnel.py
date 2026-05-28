@@ -29,7 +29,9 @@ def _try_public_ip(port):
         return None
 
 
-def get_public_url(port=5000):
+def get_public_url(port=None):
+    if port is None:
+        port = int(os.getenv('PORT', 5000))
     global _public_url
     if _public_url:
         return _public_url
