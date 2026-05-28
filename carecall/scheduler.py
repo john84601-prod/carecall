@@ -27,6 +27,7 @@ def init_scheduler(app):
     with app.app_context():
         _load_all_schedule_jobs()
 
+    _register_midnight_rollover()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -65,6 +66,37 @@ def deactivate_schedule(schedule_id):
     if _scheduler and _scheduler.get_job(job_id):
         _scheduler.remove_job(job_id)
         logger.info(f"Removed cron job {job_id}")
+
+
+# ── Midnight rollover ─────────────────────────────────────────────────────────
+
+def _register_midnight_rollover():
+    """Register a daily cron job that closes any still-active wellness sessions at midnight."""
+    _scheduler.add_job(
+        func=_rollover_active_sessions,
+        trigger='cron',
+        hour=0,
+        minute=0,
+        id='midnight_rollover',
+        replace_existing=True,
+    )
+    logger.info("Midnight rollover job registered")
+
+
+def _rollover_active_sessions():
+    """Close all in-progress wellness sessions at midnight with status=failed."""
+    with _app.app_context():
+        from carecall.models import WellnessSession, db
+        active = WellnessSession.query.filter(
+            WellnessSession.status.in_(['pending', 'calling', 'escalating'])
+        ).all()
+        now = datetime.utcnow()
+        for session in active:
+            session.status = 'failed'
+            session.resolved_at = now
+        if active:
+            db.session.commit()
+            logger.info(f"Midnight rollover: closed {len(active)} active wellness session(s)")
 
 
 # ── Reminder calls ─────────────────────────────────────────────────────────────
@@ -359,7 +391,7 @@ def _call_next_emergency_contact(session_id):
             log.status = 'failed'
             log.notes = str(e)
             logger.error(f"Emergency call to {next_contact.id} failed: {e}")
-            _schedule_next_emergency(session_id, 2)
+            _schedule_next_emergency(session_id, _emergency_interval())
 
         db.session.commit()
 
@@ -374,7 +406,12 @@ def handle_emergency_no_response(session_id, contact_id):
             return
 
         logger.info(f"Session {session_id}: emergency contact {contact_id} did not acknowledge — trying next")
-        _schedule_next_emergency(session_id, 2)
+        _schedule_next_emergency(session_id, _emergency_interval())
+
+
+def _emergency_interval():
+    """Minutes to wait between emergency contact calls (from env, default 5)."""
+    return int(os.getenv('EMERGENCY_CONTACT_INTERVAL_MINUTES', 5))
 
 
 def _schedule_next_emergency(session_id, delay_minutes):

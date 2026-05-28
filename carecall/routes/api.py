@@ -96,6 +96,7 @@ def create_contact(client_id):
         phone=data['phone'],
         relationship=data.get('relationship', ''),
         priority=data.get('priority', 1),
+        can_text=bool(data.get('can_text', False)),
     )
     db.session.add(contact)
     db.session.commit()
@@ -110,6 +111,8 @@ def update_contact(contact_id):
     contact.phone = data.get('phone', contact.phone)
     contact.relationship = data.get('relationship', contact.relationship)
     contact.priority = data.get('priority', contact.priority)
+    if 'can_text' in data:
+        contact.can_text = bool(data['can_text'])
     db.session.commit()
     return jsonify(contact.to_dict())
 
@@ -324,6 +327,7 @@ def dashboard():
         ReminderSession.status.in_(['pending', 'calling'])
     ).count()
     recent_logs = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
+    recent_sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(10).all()
     return jsonify({
         'active_clients': active_clients,
         'active_schedules': active_schedules,
@@ -331,6 +335,7 @@ def dashboard():
         'active_sessions': active_sessions,
         'active_reminder_sessions': active_reminder_sessions,
         'recent_logs': [l.to_dict() for l in recent_logs],
+        'recent_sessions': [s.to_dict() for s in recent_sessions],
     })
 
 

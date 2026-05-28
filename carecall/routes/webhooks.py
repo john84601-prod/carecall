@@ -189,6 +189,7 @@ def emergency_keypress():
         if digits == session.schedule.required_keypress:
             log.status = 'acknowledged'
             session.emergency_acknowledged = True
+            session.acknowledged_by_contact_id = contact.id
             session.status = 'escalated'
             session.resolved_at = datetime.utcnow()
             vr.say(

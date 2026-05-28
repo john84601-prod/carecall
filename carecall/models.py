@@ -61,6 +61,8 @@ class EmergencyContact(db.Model):
     relationship = db.Column(db.String(50), default='')
     priority = db.Column(db.Integer, default=1)
 
+    can_text = db.Column(db.Boolean, default=False)
+
     client = db.relationship('Client', back_populates='emergency_contacts')
 
     def to_dict(self):
@@ -71,6 +73,7 @@ class EmergencyContact(db.Model):
             'phone': self.phone,
             'relationship': self.relationship,
             'priority': self.priority,
+            'can_text': self.can_text,
         }
 
 
@@ -133,12 +136,16 @@ class WellnessSession(db.Model):
     # JSON list of emergency contact IDs already called
     emergency_contacts_called = db.Column(db.Text, default='[]')
     emergency_acknowledged = db.Column(db.Boolean, default=False)
+    acknowledged_by_contact_id = db.Column(db.Integer, db.ForeignKey('emergency_contacts.id'), nullable=True)
 
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     resolved_at = db.Column(db.DateTime)
 
     client = db.relationship('Client', back_populates='wellness_sessions')
     schedule = db.relationship('Schedule', back_populates='wellness_sessions')
+    acknowledged_by_contact = db.relationship(
+        'EmergencyContact', foreign_keys=[acknowledged_by_contact_id]
+    )
 
     def get_contacts_called(self):
         return json.loads(self.emergency_contacts_called or '[]')
@@ -149,15 +156,20 @@ class WellnessSession(db.Model):
         self.emergency_contacts_called = json.dumps(called)
 
     def to_dict(self):
+        ack_contact = self.acknowledged_by_contact
         return {
             'id': self.id,
             'schedule_id': self.schedule_id,
             'client_id': self.client_id,
             'client_name': self.client.full_name if self.client else '',
+            'schedule_name': self.schedule.name if self.schedule else '',
             'status': self.status,
             'current_attempt': self.current_attempt,
             'emergency_acknowledged': self.emergency_acknowledged,
-            'started_at': self.started_at.isoformat(),
+            'acknowledged_by_contact_id':   self.acknowledged_by_contact_id,
+            'acknowledged_by_contact_name': ack_contact.name  if ack_contact else None,
+            'acknowledged_by_contact_phone': ack_contact.phone if ack_contact else None,
+            'started_at':  self.started_at.isoformat(),
             'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
         }
 

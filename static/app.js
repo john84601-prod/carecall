@@ -108,6 +108,28 @@ async function loadDashboard() {
         </tr>`).join('');
     }
 
+    // Wellness sessions panel
+    const sessPanel = document.getElementById('wellnessSessionsPanel');
+    const sessTbody = document.getElementById('wellnessSessionsTable');
+    if (d.recent_sessions && d.recent_sessions.length) {
+      sessPanel.style.display = '';
+      sessTbody.innerHTML = d.recent_sessions.map(s => {
+        const ackBy = s.acknowledged_by_contact_name
+          ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${esc(s.acknowledged_by_contact_phone || '')}</small>`
+          : (s.status === 'escalated' ? '—' : '');
+        return `<tr>
+          <td>${esc(s.client_name)}</td>
+          <td>${wellnessSessionBadge(s.status)}</td>
+          <td>${s.current_attempt}</td>
+          <td style="white-space:nowrap">${fmtTime(s.started_at)}</td>
+          <td style="white-space:nowrap">${s.resolved_at ? fmtTime(s.resolved_at) : '—'}</td>
+          <td>${ackBy || '—'}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      sessPanel.style.display = 'none';
+    }
+
     document.getElementById('statusDot').className = 'status-dot online';
   } catch (e) {
     document.getElementById('statusDot').className = 'status-dot offline';
@@ -269,9 +291,10 @@ async function loadContactsList(clientId) {
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
           <br><span style="color:var(--muted)">${esc(c.phone)}</span>
+          ${c.can_text ? ' <span class="badge badge-blue" style="font-size:.7rem">Can Text</span>' : ''}
         </span>
         <div class="action-btns">
-          <button class="btn-edit btn-sm" onclick="editContact(${c.id},'${esc(c.name)}','${esc(c.phone)}','${esc(c.relationship)}',${c.priority})">Edit</button>
+          <button class="btn-edit btn-sm" onclick="editContact(${c.id},'${esc(c.name)}','${esc(c.phone)}','${esc(c.relationship)}',${c.priority},${c.can_text})">Edit</button>
           <button class="btn-danger btn-sm" onclick="deleteContact(${c.id})">✕</button>
         </div>
       </div>`).join('');
@@ -288,10 +311,11 @@ function showContactModal() {
   document.getElementById('contactPhone').value = '';
   document.getElementById('contactRelationship').value = '';
   document.getElementById('contactPriority').value = 1;
+  document.getElementById('contactCanText').checked = false;
   openOverlay('contactOverlay');
 }
 
-function editContact(id, name, phone, rel, priority) {
+function editContact(id, name, phone, rel, priority, canText) {
   currentContactId = id;
   document.getElementById('contactModalTitle').textContent = 'Edit Emergency Contact';
   document.getElementById('contactId').value = id;
@@ -299,6 +323,7 @@ function editContact(id, name, phone, rel, priority) {
   document.getElementById('contactPhone').value = phone;
   document.getElementById('contactRelationship').value = rel;
   document.getElementById('contactPriority').value = priority;
+  document.getElementById('contactCanText').checked = !!canText;
   openOverlay('contactOverlay');
 }
 
@@ -310,6 +335,7 @@ async function saveContact(e) {
     phone:        document.getElementById('contactPhone').value.trim(),
     relationship: document.getElementById('contactRelationship').value.trim(),
     priority:     parseInt(document.getElementById('contactPriority').value),
+    can_text:     document.getElementById('contactCanText').checked,
   };
   try {
     if (id) {
@@ -799,6 +825,19 @@ function statusBadge(s) {
     'wrong-keypress': 'Wrong Key',
   };
   return `<span class="badge ${classes[s] || 'badge-gray'}">${esc(labels[s] || s)}</span>`;
+}
+
+function wellnessSessionBadge(s) {
+  const map = {
+    pending:    ['badge-orange', 'Pending'],
+    calling:    ['badge-blue',   'Calling'],
+    acknowledged: ['badge-green', 'Acknowledged'],
+    escalating: ['badge-orange', 'Escalating'],
+    escalated:  ['badge-green',  'Escalated'],
+    failed:     ['badge-red',    'Failed'],
+  };
+  const [cls, label] = map[s] || ['badge-gray', s];
+  return `<span class="badge ${cls}">${label}</span>`;
 }
 
 function typeBadge(t) {
