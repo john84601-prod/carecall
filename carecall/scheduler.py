@@ -288,6 +288,7 @@ def _attempt_wellness_call(session_id):
                 session.client.phone,
                 answer_url=f"{base}/webhook/wellness-answer?session_id={session_id}&log_id={log.id}",
                 status_callback_url=f"{base}/webhook/call-status?session_id={session_id}&log_id={log.id}&call_type=wellness",
+                machine_detection=True,
             )
             log.call_sid = sid
         except Exception as e:

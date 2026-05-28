@@ -72,6 +72,11 @@ def wellness_answer():
     session = db.session.get(WellnessSession, session_id) if session_id else None
     log = db.session.get(CallLog, log_id) if log_id else None
 
+    # AnsweredBy values: human | machine_start | machine_end_beep |
+    #                    machine_end_silence | machine_end_other | fax | unknown
+    answered_by = request.form.get('AnsweredBy', 'human')
+    is_machine = answered_by.startswith('machine')
+
     if log:
         log.status = 'answered'
         db.session.commit()
@@ -83,25 +88,39 @@ def wellness_answer():
         schedule = session.schedule
         key = schedule.required_keypress
 
-        gather = Gather(
-            num_digits=1,
-            action=f"{_public_url()}/webhook/wellness-keypress?session_id={session_id}&log_id={log_id}",
-            method='POST',
-            timeout=15,
-        )
-
-        if schedule.mp3_filename:
-            # Play the custom audio prompt inside the gather
-            gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+        if is_machine:
+            # Voicemail — play audio after the beep (DetectMessageEnd already waited for it),
+            # then hang up. Voicemail can't send DTMF so no Gather needed.
+            if schedule.mp3_filename:
+                vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+            else:
+                vr.say(
+                    f"Hello {client.first_name}, this is a wellness check call. "
+                    f"We were unable to reach you. Please call back or press {key} "
+                    "when we try again to confirm you are okay.",
+                    voice=_voice(),
+                )
         else:
-            gather.say(
-                f"Hello {client.first_name}, this is your wellness check call. "
-                f"Please press {key} to confirm you are okay.",
-                voice=_voice(),
+            # Human answered — gather keypress confirmation
+            gather = Gather(
+                num_digits=1,
+                action=f"{_public_url()}/webhook/wellness-keypress?session_id={session_id}&log_id={log_id}",
+                method='POST',
+                timeout=15,
             )
 
-        vr.append(gather)
-        vr.say("We did not receive your response. Goodbye.", voice=_voice())
+            if schedule.mp3_filename:
+                # Play the custom audio prompt inside the gather
+                gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+            else:
+                gather.say(
+                    f"Hello {client.first_name}, this is your wellness check call. "
+                    f"Please press {key} to confirm you are okay.",
+                    voice=_voice(),
+                )
+
+            vr.append(gather)
+            vr.say("We did not receive your response. Goodbye.", voice=_voice())
     else:
         vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
 
