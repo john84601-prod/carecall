@@ -12,11 +12,7 @@ def _try_ngrok(port):
         token = os.getenv('NGROK_AUTH_TOKEN', '').strip()
         if token:
             conf.get_default().auth_token = token
-        # Use https protocol locally if SSL certs are configured so ngrok
-        # can reach Flask when it's serving HTTPS on the same port.
-        cert_file = os.getenv('CERT_FILE', '').strip()
-        proto = 'https' if cert_file else 'http'
-        tunnel = ngrok.connect(port, proto)
+        tunnel = ngrok.connect(port, 'http')
         url = tunnel.public_url
         # Always use https for the public-facing URL
         return url.replace('http://', 'https://')
