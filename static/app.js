@@ -86,6 +86,14 @@ async function loadDashboard() {
       sc.style.display = 'none';
     }
 
+    const rc = document.getElementById('reminderSessionCard');
+    if (d.active_reminder_sessions > 0) {
+      rc.style.display = '';
+      document.getElementById('statReminderSessions').textContent = d.active_reminder_sessions;
+    } else {
+      rc.style.display = 'none';
+    }
+
     const tbody = document.getElementById('logTable');
     if (!d.recent_logs.length) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty">No calls yet.</td></tr>';
@@ -528,6 +536,7 @@ function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('reminderFields').style.display = type === 'reminder' ? '' : 'none';
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
+  // Retry settings (attempts + wait time) always visible for both types
 }
 
 // ── Time picker helpers ────────────────────────────────────────────────────────
@@ -771,13 +780,25 @@ function fmtDays(str) {
 
 function statusBadge(s) {
   const classes = {
-    initiated: 'badge-blue', answered: 'badge-blue',
-    acknowledged: 'badge-green', escalated: 'badge-green',
-    'no-answer': 'badge-orange', busy: 'badge-orange',
-    failed: 'badge-red', 'wrong-keypress': 'badge-red',
-    completed: 'badge-gray',
+    initiated:      'badge-blue',
+    answered:       'badge-blue',
+    reached_human:  'badge-green',
+    left_voicemail: 'badge-blue',
+    acknowledged:   'badge-green',
+    escalated:      'badge-green',
+    'no-answer':    'badge-orange',
+    busy:           'badge-orange',
+    failed:         'badge-red',
+    'wrong-keypress': 'badge-red',
+    completed:      'badge-gray',
   };
-  return `<span class="badge ${classes[s] || 'badge-gray'}">${esc(s)}</span>`;
+  const labels = {
+    reached_human:  'Reached Human',
+    left_voicemail: 'Left Voicemail',
+    'no-answer':    'No Answer',
+    'wrong-keypress': 'Wrong Key',
+  };
+  return `<span class="badge ${classes[s] || 'badge-gray'}">${esc(labels[s] || s)}</span>`;
 }
 
 function typeBadge(t) {

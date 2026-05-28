@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, CallLog, WellnessSession
+from carecall.models import Client, EmergencyContact, Schedule, CallLog, WellnessSession, ReminderSession
 
 api_bp = Blueprint('api', __name__)
 
@@ -155,7 +155,7 @@ def create_schedule():
         days_of_week=data.get('days_of_week', '0,1,2,3,4,5,6'),
         mp3_filename=data.get('mp3_filename'),
         required_keypress=data.get('required_keypress', '1'),
-        max_attempts=data.get('max_attempts', 3),
+        max_attempts=min(int(data.get('max_attempts', 3)), 20),
         attempt_interval_minutes=data.get('attempt_interval_minutes', 10),
         active=data.get('active', True),
     )
@@ -181,7 +181,8 @@ def update_schedule(schedule_id):
     schedule.days_of_week = data.get('days_of_week', schedule.days_of_week)
     schedule.mp3_filename = data.get('mp3_filename', schedule.mp3_filename)
     schedule.required_keypress = data.get('required_keypress', schedule.required_keypress)
-    schedule.max_attempts = data.get('max_attempts', schedule.max_attempts)
+    if 'max_attempts' in data:
+        schedule.max_attempts = min(int(data['max_attempts']), 20)
     schedule.attempt_interval_minutes = data.get('attempt_interval_minutes', schedule.attempt_interval_minutes)
     schedule.active = data.get('active', schedule.active)
     db.session.commit()
@@ -303,6 +304,12 @@ def get_sessions():
     return jsonify([s.to_dict() for s in sessions])
 
 
+@api_bp.route('/reminder-sessions', methods=['GET'])
+def get_reminder_sessions():
+    sessions = ReminderSession.query.order_by(ReminderSession.started_at.desc()).limit(50).all()
+    return jsonify([s.to_dict() for s in sessions])
+
+
 @api_bp.route('/dashboard', methods=['GET'])
 def dashboard():
     from datetime import datetime, timezone
@@ -313,12 +320,16 @@ def dashboard():
     active_sessions = WellnessSession.query.filter(
         WellnessSession.status.in_(['pending', 'calling', 'escalating'])
     ).count()
+    active_reminder_sessions = ReminderSession.query.filter(
+        ReminderSession.status.in_(['pending', 'calling'])
+    ).count()
     recent_logs = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
     return jsonify({
         'active_clients': active_clients,
         'active_schedules': active_schedules,
         'calls_today': calls_today,
         'active_sessions': active_sessions,
+        'active_reminder_sessions': active_reminder_sessions,
         'recent_logs': [l.to_dict() for l in recent_logs],
     })
 

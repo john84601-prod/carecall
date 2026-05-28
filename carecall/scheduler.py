@@ -70,20 +70,49 @@ def deactivate_schedule(schedule_id):
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 def _fire_reminder(schedule_id):
+    """Scheduler entry point — creates a ReminderSession and fires the first attempt."""
     with _app.app_context():
-        from carecall.models import Schedule, CallLog, db
-        from carecall.twilio_client import make_call
-        from carecall.tunnel import get_public_url
+        from carecall.models import Schedule, ReminderSession, db
 
         schedule = db.session.get(Schedule, schedule_id)
         if not schedule or not schedule.active or not schedule.client.active:
             return
 
+        # Skip if a session for this schedule is already in progress
+        in_progress = ReminderSession.query.filter(
+            ReminderSession.schedule_id == schedule_id,
+            ReminderSession.status.in_(['pending', 'calling']),
+        ).first()
+        if in_progress:
+            logger.info(f"Reminder session {in_progress.id} still active for schedule {schedule_id} — skipping")
+            return
+
+        session = ReminderSession(schedule_id=schedule_id, client_id=schedule.client_id)
+        db.session.add(session)
+        db.session.commit()
+        _attempt_reminder_call(session.id)
+
+
+def _attempt_reminder_call(session_id):
+    """Make one reminder call attempt with AMD so we know if a human or voicemail answered."""
+    with _app.app_context():
+        from carecall.models import ReminderSession, CallLog, db
+        from carecall.twilio_client import make_call
+        from carecall.tunnel import get_public_url
+
+        session = db.session.get(ReminderSession, session_id)
+        if not session:
+            return
+
+        session.current_attempt += 1
+        session.status = 'calling'
+
         log = CallLog(
-            schedule_id=schedule_id,
-            client_id=schedule.client_id,
+            schedule_id=session.schedule_id,
+            client_id=session.client_id,
+            reminder_session_id=session_id,
             call_type='reminder',
-            attempt_number=1,
+            attempt_number=session.current_attempt,
             status='initiated',
         )
         db.session.add(log)
@@ -92,17 +121,83 @@ def _fire_reminder(schedule_id):
         base = get_public_url()
         try:
             sid = make_call(
-                schedule.client.phone,
-                answer_url=f"{base}/webhook/reminder-answer?log_id={log.id}",
-                status_callback_url=f"{base}/webhook/call-status?log_id={log.id}&call_type=reminder",
+                session.client.phone,
+                answer_url=(
+                    f"{base}/webhook/reminder-answer"
+                    f"?session_id={session_id}&log_id={log.id}"
+                ),
+                status_callback_url=(
+                    f"{base}/webhook/call-status"
+                    f"?call_type=reminder&session_id={session_id}&log_id={log.id}"
+                ),
+                machine_detection=True,
             )
             log.call_sid = sid
+            logger.info(
+                f"Reminder call: session={session_id} attempt={session.current_attempt} sid={sid}"
+            )
         except Exception as e:
+            logger.error(f"Reminder call failed to initiate for session {session_id}: {e}")
             log.status = 'failed'
             log.notes = str(e)
-            logger.error(f"Reminder call failed for schedule {schedule_id}: {e}")
+            session.status = 'pending'
+            db.session.commit()
+            handle_reminder_no_response(session_id)
+            return
 
         db.session.commit()
+
+
+def handle_reminder_no_response(session_id):
+    """Called (in background thread) when a reminder call ends without an answer.
+    Retries up to max_attempts (capped at 20), then marks the session failed.
+    """
+    with _app.app_context():
+        from carecall.models import ReminderSession, db
+
+        session = db.session.get(ReminderSession, session_id)
+        if not session or session.status in ('reached_human', 'left_voicemail', 'failed'):
+            return  # Already resolved — nothing to do
+
+        schedule = session.schedule
+        if not schedule:
+            session.status = 'failed'
+            session.resolved_at = datetime.utcnow()
+            db.session.commit()
+            return
+
+        max_att = min(schedule.max_attempts or 3, 20)
+        if session.current_attempt < max_att:
+            delay = schedule.attempt_interval_minutes or int(
+                os.getenv('DEFAULT_ATTEMPT_INTERVAL_MINUTES', 10)
+            )
+            session.status = 'pending'
+            db.session.commit()
+            _schedule_reminder_retry(session_id, delay)
+            logger.info(
+                f"Reminder session {session_id}: attempt {session.current_attempt}/{max_att} "
+                f"unanswered — retrying in {delay}m"
+            )
+        else:
+            session.status = 'failed'
+            session.resolved_at = datetime.utcnow()
+            db.session.commit()
+            logger.info(
+                f"Reminder session {session_id}: max attempts ({max_att}) reached — session failed"
+            )
+
+
+def _schedule_reminder_retry(session_id, delay_minutes):
+    job_id = f"reminder_retry_{session_id}"
+    _scheduler.add_job(
+        func=_attempt_reminder_call,
+        trigger='date',
+        run_date=datetime.now() + timedelta(minutes=delay_minutes),
+        args=[session_id],
+        id=job_id,
+        replace_existing=True,
+    )
+    logger.info(f"Reminder session {session_id}: retry job scheduled in {delay_minutes}m")
 
 
 # ── Wellness check calls ───────────────────────────────────────────────────────
@@ -264,7 +359,6 @@ def _call_next_emergency_contact(session_id):
             log.status = 'failed'
             log.notes = str(e)
             logger.error(f"Emergency call to {next_contact.id} failed: {e}")
-            # Try next contact in 2 minutes
             _schedule_next_emergency(session_id, 2)
 
         db.session.commit()

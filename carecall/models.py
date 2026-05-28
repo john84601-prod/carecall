@@ -26,6 +26,7 @@ class Client(db.Model):
     schedules = db.relationship('Schedule', back_populates='client', cascade='all, delete-orphan')
     call_logs = db.relationship('CallLog', back_populates='client', cascade='all, delete-orphan')
     wellness_sessions = db.relationship('WellnessSession', back_populates='client', cascade='all, delete-orphan')
+    reminder_sessions = db.relationship('ReminderSession', back_populates='client', cascade='all, delete-orphan')
 
     @property
     def full_name(self):
@@ -91,12 +92,15 @@ class Schedule(db.Model):
 
     # Wellness-specific
     required_keypress = db.Column(db.String(1), default='1')
+
+    # Shared retry settings (both reminder and wellness)
     max_attempts = db.Column(db.Integer, default=3)
     attempt_interval_minutes = db.Column(db.Integer, default=10)
 
     client = db.relationship('Client', back_populates='schedules')
     call_logs = db.relationship('CallLog', back_populates='schedule')
     wellness_sessions = db.relationship('WellnessSession', back_populates='schedule')
+    reminder_sessions = db.relationship('ReminderSession', back_populates='schedule')
 
     def to_dict(self):
         return {
@@ -158,12 +162,44 @@ class WellnessSession(db.Model):
         }
 
 
+class ReminderSession(db.Model):
+    """One triggered reminder call session that may span multiple retry attempts."""
+    __tablename__ = 'reminder_sessions'
+    id          = db.Column(db.Integer, primary_key=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'), nullable=False)
+    client_id   = db.Column(db.Integer, db.ForeignKey('clients.id'),   nullable=False)
+
+    # pending → calling → reached_human | left_voicemail | failed
+    status          = db.Column(db.String(30), default='pending')
+    current_attempt = db.Column(db.Integer, default=0)
+
+    started_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime)
+
+    client   = db.relationship('Client',   back_populates='reminder_sessions')
+    schedule = db.relationship('Schedule', back_populates='reminder_sessions')
+
+    def to_dict(self):
+        return {
+            'id':              self.id,
+            'schedule_id':     self.schedule_id,
+            'client_id':       self.client_id,
+            'client_name':     self.client.full_name if self.client else '',
+            'schedule_name':   self.schedule.name    if self.schedule else '',
+            'status':          self.status,
+            'current_attempt': self.current_attempt,
+            'started_at':      self.started_at.isoformat()  if self.started_at  else None,
+            'resolved_at':     self.resolved_at.isoformat() if self.resolved_at else None,
+        }
+
+
 class CallLog(db.Model):
     __tablename__ = 'call_logs'
     id = db.Column(db.Integer, primary_key=True)
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'))
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
-    wellness_session_id = db.Column(db.Integer, db.ForeignKey('wellness_sessions.id'))
+    wellness_session_id  = db.Column(db.Integer, db.ForeignKey('wellness_sessions.id'))
+    reminder_session_id  = db.Column(db.Integer, db.ForeignKey('reminder_sessions.id'))
     emergency_contact_id = db.Column(db.Integer, db.ForeignKey('emergency_contacts.id'))
 
     call_sid = db.Column(db.String(50))
@@ -184,7 +220,8 @@ class CallLog(db.Model):
             'client_id': self.client_id,
             'client_name': self.client.full_name if self.client else '',
             'schedule_id': self.schedule_id,
-            'wellness_session_id': self.wellness_session_id,
+            'wellness_session_id':  self.wellness_session_id,
+            'reminder_session_id':  self.reminder_session_id,
             'call_sid': self.call_sid,
             'call_type': self.call_type,
             'attempt_number': self.attempt_number,

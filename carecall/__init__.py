@@ -39,8 +39,23 @@ def create_app():
         _migrate_client_name_split()
         _migrate_client_address_fields()
         _migrate_client_birthday()
+        _migrate_call_log_reminder_session()
 
     return app
+
+
+def _migrate_call_log_reminder_session():
+    """Add reminder_session_id column to call_logs if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('call_logs')]
+    if 'reminder_session_id' not in existing:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE call_logs ADD COLUMN reminder_session_id INTEGER "
+                "REFERENCES reminder_sessions(id)"
+            ))
+            conn.commit()
 
 
 def _migrate_client_birthday():

@@ -49,6 +49,10 @@
         <div class="stat-num" id="statSessions">—</div>
         <div class="stat-label">Active Wellness Sessions</div>
       </div>
+      <div class="stat-card alert" id="reminderSessionCard" style="display:none">
+        <div class="stat-num" id="statReminderSessions">—</div>
+        <div class="stat-label">Reminder Retries In Progress</div>
+      </div>
     </div>
 
     <div class="section-head">
@@ -378,15 +382,17 @@
           <label>Required Key Press <span class="hint">(client presses this to confirm they're OK)</span></label>
           <input type="text" id="scheduleKey" value="1" maxlength="1" pattern="[0-9*#]" style="width:80px">
         </div>
-        <div class="row gap-md">
-          <div class="form-group flex-1">
-            <label>Call Attempts</label>
-            <input type="number" id="scheduleMaxAttempts" value="3" min="1" max="20">
-          </div>
-          <div class="form-group flex-1">
-            <label>Call Wait Time <span class="hint">(minutes between attempts)</span></label>
-            <input type="number" id="scheduleInterval" value="10" min="1">
-          </div>
+      </div>
+
+      <!-- Retry settings — shown for both Reminder and Wellness -->
+      <div class="row gap-md">
+        <div class="form-group flex-1">
+          <label>Call Attempts <span class="hint">(max 20)</span></label>
+          <input type="number" id="scheduleMaxAttempts" value="3" min="1" max="20">
+        </div>
+        <div class="form-group flex-1">
+          <label>Wait Between Attempts <span class="hint">(minutes)</span></label>
+          <input type="number" id="scheduleInterval" value="10" min="1">
         </div>
       </div>
 

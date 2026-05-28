@@ -23,19 +23,33 @@ def _public_url():
 
 @webhooks_bp.route('/reminder-answer', methods=['POST'])
 def reminder_answer():
-    log_id = request.args.get('log_id', type=int)
-    log = db.session.get(CallLog, log_id) if log_id else None
+    from carecall.models import ReminderSession
+    log_id     = request.args.get('log_id',     type=int)
+    session_id = request.args.get('session_id', type=int)
+
+    log     = db.session.get(CallLog,         log_id)     if log_id     else None
+    session = db.session.get(ReminderSession, session_id) if session_id else None
+
+    # AnsweredBy values: human | machine_start | machine_end_beep |
+    #                    machine_end_silence | machine_end_other | fax | unknown
+    answered_by = request.form.get('AnsweredBy', 'unknown')
+    result = 'left_voicemail' if answered_by.startswith('machine') else 'reached_human'
 
     vr = VoiceResponse()
 
     if log:
-        log.status = 'answered'
+        log.status = result
+        if session and session.status == 'calling':
+            session.status = result
+            session.resolved_at = datetime.utcnow()
+
         schedule = log.schedule
         if schedule and schedule.mp3_filename:
             mp3_url = f"{_public_url()}/uploads/{schedule.mp3_filename}"
             vr.play(mp3_url)
         else:
             vr.say("This is your scheduled reminder. Have a great day.", voice='alice')
+
         db.session.commit()
     else:
         vr.say("This is your scheduled reminder. Have a great day.", voice='alice')
@@ -214,7 +228,15 @@ def call_status():
     if twilio_status not in terminal:
         return '', 204
 
-    if call_type == 'wellness' and session_id:
+    if call_type == 'reminder' and session_id:
+        from carecall.models import ReminderSession
+        from carecall.scheduler import handle_reminder_no_response
+        r_session = db.session.get(ReminderSession, session_id)
+        if r_session and r_session.status == 'calling':
+            t = Thread(target=handle_reminder_no_response, args=(session_id,), daemon=True)
+            t.start()
+
+    elif call_type == 'wellness' and session_id:
         session = db.session.get(WellnessSession, session_id)
         if session and session.status not in ('acknowledged', 'escalating', 'escalated', 'failed'):
             t = Thread(target=handle_wellness_no_response, args=(session_id,), daemon=True)
