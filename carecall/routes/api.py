@@ -327,11 +327,15 @@ def dashboard():
 
 @api_bp.route('/settings', methods=['GET'])
 def get_settings():
-    from carecall.tunnel import _public_url
+    from carecall.tunnel import get_public_url
+    try:
+        public_url = get_public_url()
+    except Exception:
+        public_url = os.getenv('PUBLIC_URL', '(not available)')
     return jsonify({
         'twilio_account_sid': os.getenv('TWILIO_ACCOUNT_SID', '(not set)'),
         'twilio_from_number': os.getenv('TWILIO_FROM_NUMBER', '(not set)'),
-        'public_url': _public_url or os.getenv('PUBLIC_URL', '(auto-detecting)'),
+        'public_url': public_url,
     })
 
 
