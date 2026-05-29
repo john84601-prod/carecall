@@ -765,7 +765,7 @@ hr { border: none; border-top: 1px solid var(--border); }
 .schedule-item-meta { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
 
 /* ── Client view toggle ──────────────────────────────────────────────── */
-.view-toggle { display: flex; gap: .25rem; }
+.view-toggle { display: flex; gap: .25rem; align-items: center; }
 .view-btn {
   align-items: center;
   background: transparent;
@@ -780,6 +780,8 @@ hr { border: none; border-top: 1px solid var(--border); }
 }
 .view-btn:hover  { background: var(--bg); color: var(--text); }
 .view-btn.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+.sort-btn { font-size: .72rem; font-weight: 600; padding: .35rem .42rem; }
+.view-toggle-sep { width: 1px; height: 20px; background: var(--border); margin: 0 .1rem; flex-shrink: 0; }
 
 /* ── Call-type chips (R / W) on client cards and rows ────────────────── */
 .type-chip {

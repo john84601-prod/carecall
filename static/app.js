@@ -235,10 +235,10 @@ function setClientView(mode) {
   filterAndRenderClients();
 }
 
-function toggleClientSort() {
-  clientSortOrder = clientSortOrder === 'first' ? 'last' : 'first';
-  const btn = document.getElementById('sortToggleBtn');
-  if (btn) btn.textContent = clientSortOrder === 'first' ? 'First, Last' : 'Last, First';
+function setClientSort(order) {
+  clientSortOrder = order;
+  document.getElementById('sortFirstBtn').classList.toggle('active', order === 'first');
+  document.getElementById('sortLastBtn').classList.toggle('active', order === 'last');
   filterAndRenderClients();
 }
 

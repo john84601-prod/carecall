@@ -178,6 +178,9 @@
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
+          <span class="view-toggle-sep"></span>
+          <button id="sortFirstBtn" class="view-btn sort-btn active" onclick="setClientSort('first')" title="Sort: First name, Last name">F, L</button>
+          <button id="sortLastBtn"  class="view-btn sort-btn"        onclick="setClientSort('last')"  title="Sort: Last name, First name">L, F</button>
         </div>
         <button class="btn-primary" onclick="showClientModal()">+ Add Client</button>
       </div>
@@ -220,11 +223,6 @@
       <div class="filter-status-group">
         <div class="filter-group-label">&nbsp;</div>
         <button type="button" class="filter-clear-btn" onclick="clearClientFilters()">Clear Filters</button>
-      </div>
-      <div class="filter-divider"></div>
-      <div class="filter-status-group">
-        <div class="filter-group-label">Sort</div>
-        <button type="button" id="sortToggleBtn" class="filter-sort-btn" onclick="toggleClientSort()">First, Last</button>
       </div>
     </div>
 
