@@ -414,6 +414,8 @@ function showClientModal(client) {
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
   document.getElementById('clientTabsSection').style.display = 'none';
+  cancelBlackoutEdit();
+  _blackoutsCache = [];
   // Collapse address section for a clean blank form
   document.getElementById('addrNotesBody').style.display = 'none';
   document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = '▶';
@@ -497,10 +499,96 @@ async function deleteClient(id, name) {
 // ── Client modal helpers ──────────────────────────────────────────────────────
 
 function switchClientTab(tab) {
-  ['schedules', 'contacts', 'audio'].forEach(t => {
+  ['schedules', 'exceptions', 'contacts', 'audio'].forEach(t => {
     document.getElementById(`clientTab-${t}`).classList.toggle('active', t === tab);
     document.getElementById(`clientPane-${t}`).style.display = t === tab ? '' : 'none';
   });
+  if (tab === 'exceptions') loadBlackouts();
+}
+
+// ── Wellness blackout / call exceptions ───────────────────────────────────────
+let _blackoutsCache = [];
+
+async function loadBlackouts() {
+  if (!currentClientId) return;
+  try {
+    _blackoutsCache = await api('GET', `/clients/${currentClientId}/blackouts`);
+    _renderBlackoutList();
+  } catch(e) { console.error('Failed to load blackouts', e); }
+}
+
+function _renderBlackoutList() {
+  const el = document.getElementById('blackoutList');
+  if (!_blackoutsCache.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:.875rem;padding:.5rem 0">No exceptions added yet.</p>';
+    return;
+  }
+  el.innerHTML = _blackoutsCache.map(b => {
+    const s = _fmtDateMDY(b.start_date), e = _fmtDateMDY(b.end_date);
+    const range = b.start_date === b.end_date ? s : `${s} – ${e}`;
+    const note  = b.note ? `<span class="blackout-note">${esc(b.note)}</span>` : '';
+    return `<div class="blackout-row">
+      <div class="blackout-info"><span class="blackout-range">${range}</span>${note}</div>
+      <div class="blackout-actions">
+        <button class="btn-ghost btn-sm" onclick="_editBlackout(${b.id})">Edit</button>
+        <button class="btn-danger btn-sm" onclick="_deleteBlackout(${b.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _fmtDateMDY(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-').map(Number);
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mon[m-1]} ${d}, ${y}`;
+}
+
+async function saveBlackout() {
+  const id    = document.getElementById('blackoutId').value;
+  const start = document.getElementById('blackoutStart').value;
+  const end   = document.getElementById('blackoutEnd').value;
+  const note  = document.getElementById('blackoutNote').value.trim();
+  if (!start || !end) { toast('Please select start and end dates', 'error'); return; }
+  if (end < start)    { toast('End date must be on or after start date', 'error'); return; }
+  try {
+    if (id) {
+      await api('PUT',  `/blackouts/${id}`, { start_date: start, end_date: end, note });
+    } else {
+      await api('POST', `/clients/${currentClientId}/blackouts`, { start_date: start, end_date: end, note });
+    }
+    cancelBlackoutEdit();
+    await loadBlackouts();
+    toast(id ? 'Exception updated' : 'Exception added', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function _editBlackout(id) {
+  const b = _blackoutsCache.find(x => x.id === id);
+  if (!b) return;
+  document.getElementById('blackoutId').value    = b.id;
+  document.getElementById('blackoutStart').value = b.start_date;
+  document.getElementById('blackoutEnd').value   = b.end_date;
+  document.getElementById('blackoutNote').value  = b.note || '';
+  document.getElementById('blackoutSaveLabel').textContent = 'Update Exception';
+  document.getElementById('blackoutCancelBtn').style.display = '';
+}
+
+function cancelBlackoutEdit() {
+  ['blackoutId','blackoutStart','blackoutEnd','blackoutNote'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('blackoutSaveLabel').textContent = 'Add Exception';
+  document.getElementById('blackoutCancelBtn').style.display = 'none';
+}
+
+async function _deleteBlackout(id) {
+  if (!confirm('Delete this wellness call exception?')) return;
+  try {
+    await api('DELETE', `/blackouts/${id}`);
+    await loadBlackouts();
+    toast('Exception deleted', 'success');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 function toggleClientSection(bodyId, btn) {

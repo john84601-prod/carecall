@@ -251,6 +251,23 @@ def _fire_wellness_check(schedule_id):
             logger.info(f"Session {in_progress.id} still active for schedule {schedule_id} — skipping")
             return
 
+        # Skip if today falls within a wellness blackout for this client
+        from datetime import date as _date
+        from carecall.models import WellnessBlackout
+        _today = _date.today()
+        blackout = WellnessBlackout.query.filter(
+            WellnessBlackout.client_id == schedule.client_id,
+            WellnessBlackout.start_date <= _today,
+            WellnessBlackout.end_date   >= _today,
+        ).first()
+        if blackout:
+            _note = f' ({blackout.note})' if blackout.note else ''
+            logger.info(
+                f"Wellness check for client {schedule.client_id} skipped "
+                f"— blackout {blackout.start_date} to {blackout.end_date}{_note}"
+            )
+            return
+
         session = WellnessSession(schedule_id=schedule_id, client_id=schedule.client_id)
         db.session.add(session)
         db.session.commit()

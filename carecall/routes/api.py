@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout
 
 api_bp = Blueprint('api', __name__)
 
@@ -356,6 +356,65 @@ def save_recording():
         db.session.add(af)
     db.session.commit()
     return jsonify(af.to_dict()), 201
+
+
+# ── Wellness blackout dates ────────────────────────────────────────────────────
+
+@api_bp.route('/clients/<int:client_id>/blackouts', methods=['GET'])
+def get_blackouts(client_id):
+    db.get_or_404(Client, client_id)
+    blackouts = (WellnessBlackout.query
+                 .filter_by(client_id=client_id)
+                 .order_by(WellnessBlackout.start_date)
+                 .all())
+    return jsonify([b.to_dict() for b in blackouts])
+
+
+@api_bp.route('/clients/<int:client_id>/blackouts', methods=['POST'])
+def create_blackout(client_id):
+    db.get_or_404(Client, client_id)
+    data = request.get_json()
+    start = _parse_date((data or {}).get('start_date'))
+    end   = _parse_date((data or {}).get('end_date'))
+    if not start or not end:
+        return jsonify({'error': 'start_date and end_date are required (YYYY-MM-DD)'}), 400
+    if end < start:
+        return jsonify({'error': 'end_date must be on or after start_date'}), 400
+    b = WellnessBlackout(
+        client_id  = client_id,
+        start_date = start,
+        end_date   = end,
+        note       = (data.get('note') or '').strip(),
+    )
+    db.session.add(b)
+    db.session.commit()
+    return jsonify(b.to_dict()), 201
+
+
+@api_bp.route('/blackouts/<int:blackout_id>', methods=['PUT'])
+def update_blackout(blackout_id):
+    b    = db.get_or_404(WellnessBlackout, blackout_id)
+    data = request.get_json() or {}
+    if 'start_date' in data:
+        b.start_date = _parse_date(data['start_date'])
+    if 'end_date' in data:
+        b.end_date = _parse_date(data['end_date'])
+    if 'note' in data:
+        b.note = (data['note'] or '').strip()
+    if not b.start_date or not b.end_date:
+        return jsonify({'error': 'Invalid date'}), 400
+    if b.end_date < b.start_date:
+        return jsonify({'error': 'end_date must be on or after start_date'}), 400
+    db.session.commit()
+    return jsonify(b.to_dict())
+
+
+@api_bp.route('/blackouts/<int:blackout_id>', methods=['DELETE'])
+def delete_blackout(blackout_id):
+    b = db.get_or_404(WellnessBlackout, blackout_id)
+    db.session.delete(b)
+    db.session.commit()
+    return '', 204
 
 
 # ── Call logs & sessions ───────────────────────────────────────────────────────

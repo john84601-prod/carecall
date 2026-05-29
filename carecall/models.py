@@ -238,6 +238,31 @@ class ReminderSession(db.Model):
         }
 
 
+class WellnessBlackout(db.Model):
+    """Date range during which wellness calls are automatically skipped for a client."""
+    __tablename__ = 'wellness_blackouts'
+    id         = db.Column(db.Integer, primary_key=True)
+    client_id  = db.Column(db.Integer, db.ForeignKey('clients.id', ondelete='CASCADE'), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date   = db.Column(db.Date, nullable=False)
+    note       = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    client = db.relationship('Client', backref=db.backref(
+        'wellness_blackouts', cascade='all, delete-orphan', passive_deletes=True
+    ))
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'client_id':  self.client_id,
+            'start_date': self.start_date.isoformat(),
+            'end_date':   self.end_date.isoformat(),
+            'note':       self.note or '',
+            'created_at': self.created_at.isoformat() + 'Z',
+        }
+
+
 class AudioFile(db.Model):
     """Audio file optionally associated with a specific client."""
     __tablename__ = 'audio_files'

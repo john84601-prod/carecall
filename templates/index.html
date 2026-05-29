@@ -410,6 +410,8 @@
       <div class="client-inner-tabs">
         <button class="client-inner-tab active" id="clientTab-schedules"
           onclick="switchClientTab('schedules')">📅 Schedules</button>
+        <button class="client-inner-tab" id="clientTab-exceptions"
+          onclick="switchClientTab('exceptions')">🚫 Exceptions</button>
         <button class="client-inner-tab" id="clientTab-contacts"
           onclick="switchClientTab('contacts')">👥 Contacts</button>
         <button class="client-inner-tab" id="clientTab-audio"
@@ -423,6 +425,43 @@
           <button class="btn-ghost btn-sm" onclick="showAddScheduleModal()">+ Add Schedule</button>
         </div>
         <div id="clientSchedulesList"></div>
+      </div>
+
+      <!-- Exceptions pane -->
+      <div id="clientPane-exceptions" class="client-tab-pane" style="display:none">
+        <div class="section-head" style="margin-top:.65rem;margin-bottom:.25rem">
+          <h4>Wellness Call Exceptions</h4>
+        </div>
+        <p class="hint" style="margin:0 0 .85rem">
+          Date ranges when wellness calls are automatically skipped for this client.
+          Reminder calls are not affected.
+        </p>
+
+        <!-- Add / Edit form -->
+        <div class="blackout-form">
+          <input type="hidden" id="blackoutId">
+          <div class="blackout-form-field">
+            <label class="field-label">Start Date</label>
+            <input type="date" id="blackoutStart">
+          </div>
+          <div class="blackout-form-field">
+            <label class="field-label">End Date</label>
+            <input type="date" id="blackoutEnd">
+          </div>
+          <div class="blackout-form-field blackout-form-note">
+            <label class="field-label">Reason <span class="hint">(optional)</span></label>
+            <input type="text" id="blackoutNote" placeholder="e.g. Hospital stay, Vacation">
+          </div>
+          <div class="blackout-form-actions">
+            <button type="button" class="btn-primary btn-sm" onclick="saveBlackout()">
+              <span id="blackoutSaveLabel">Add Exception</span>
+            </button>
+            <button type="button" class="btn-ghost btn-sm" id="blackoutCancelBtn"
+              onclick="cancelBlackoutEdit()" style="display:none">Cancel</button>
+          </div>
+        </div>
+
+        <div id="blackoutList"></div>
       </div>
 
       <!-- Contacts pane -->

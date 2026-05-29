@@ -938,3 +938,33 @@ hr { border: none; border-top: 1px solid var(--border); }
   white-space: nowrap;
 }
 .filter-clear-btn:hover { background: #fdecea; border-color: #e8a09a; color: var(--red); }
+
+/* ── Wellness call exceptions (blackout dates) ───────────────────────── */
+.blackout-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: flex-end;
+  padding: .75rem;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.blackout-form-field { display: flex; flex-direction: column; gap: .25rem; }
+.blackout-form-note  { flex: 1; min-width: 160px; }
+.blackout-form-actions { display: flex; gap: .4rem; align-items: flex-end; padding-bottom: 1px; }
+.field-label { font-size: .8rem; color: var(--muted); }
+
+.blackout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .55rem .5rem;
+  border-bottom: 1px solid var(--border);
+}
+.blackout-row:last-child { border-bottom: none; }
+.blackout-info  { flex: 1; }
+.blackout-range { font-weight: 500; margin-right: .5rem; }
+.blackout-note  { color: var(--muted); font-size: .85rem; }
+.blackout-actions { display: flex; gap: .4rem; flex-shrink: 0; }
