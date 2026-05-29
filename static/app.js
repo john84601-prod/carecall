@@ -152,16 +152,22 @@ async function loadDashboard() {
 
     const tbody = document.getElementById('logTable');
     if (!d.recent_logs.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">No calls today.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No calls today.</td></tr>';
     } else {
-      tbody.innerHTML = d.recent_logs.map(l => `
-        <tr>
+      tbody.innerHTML = d.recent_logs.map(l => {
+        const schedCell = l.schedule_time
+          ? `${fmtScheduleTime(l.schedule_time)}${l.schedule_name ? `<br><small style="color:var(--muted)">${esc(l.schedule_name)}</small>` : ''}`
+          : '—';
+        return `<tr>
           <td style="white-space:nowrap">${fmtTime(l.timestamp)}</td>
           <td>${esc(l.client_name)}</td>
+          <td style="white-space:nowrap">${schedCell}</td>
           <td>${typeBadge(l.call_type)}</td>
           <td>#${l.attempt_number}</td>
           <td>${statusBadge(l.status)}</td>
-        </tr>`).join('');
+          <td>${sessionStatusBadge(l.session_status)}</td>
+        </tr>`;
+      }).join('');
     }
 
     // Wellness sessions panel (always visible, filtered to today)
@@ -1389,6 +1395,31 @@ function typeBadge(t) {
   const [cls, label, tip] = map[t] || ['badge-gray', t, ''];
   const tipAttr = tip ? ` data-tooltip="${tip}"` : '';
   return `<span class="badge ${cls}"${tipAttr}>${label}</span>`;
+}
+
+function sessionStatusBadge(s) {
+  const map = {
+    pending:       ['badge-orange', 'In Progress'],
+    calling:       ['badge-orange', 'In Progress'],
+    escalating:    ['badge-red',    'Escalated'],
+    escalated:     ['badge-red',    'Escalated'],
+    acknowledged:  ['badge-green',  'Success'],
+    reached_human: ['badge-green',  'Success'],
+    left_voicemail:['badge-green',  'Success'],
+    failed:        ['badge-red',    'Failed'],
+    cancelled:     ['badge-gray',   'Cancelled'],
+  };
+  if (!s) return '<span class="badge badge-gray">—</span>';
+  const [cls, label] = map[s] || ['badge-gray', s];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function fmtScheduleTime(t) {
+  if (!t) return '—';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
 // ── Microphone recording (shared engine) ──────────────────────────────────────

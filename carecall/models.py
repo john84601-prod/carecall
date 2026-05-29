@@ -279,17 +279,27 @@ class CallLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text, default='')
 
-    client = db.relationship('Client', back_populates='call_logs')
-    schedule = db.relationship('Schedule', back_populates='call_logs')
+    client           = db.relationship('Client',          back_populates='call_logs')
+    schedule         = db.relationship('Schedule',         back_populates='call_logs')
+    wellness_session = db.relationship('WellnessSession',  foreign_keys=[wellness_session_id])
+    reminder_session = db.relationship('ReminderSession',  foreign_keys=[reminder_session_id])
 
     def to_dict(self):
+        _sched = self.schedule
+        _ws    = self.wellness_session
+        _rs    = self.reminder_session
+        # Session status reflects the overall outcome of the parent call session
+        session_status = (_ws.status if _ws else None) or (_rs.status if _rs else None)
         return {
             'id': self.id,
             'client_id': self.client_id,
             'client_name': self.client.full_name if self.client else '',
-            'schedule_id': self.schedule_id,
-            'wellness_session_id':  self.wellness_session_id,
-            'reminder_session_id':  self.reminder_session_id,
+            'schedule_id':   self.schedule_id,
+            'schedule_time': _sched.time_of_day if _sched else None,
+            'schedule_name': _sched.name        if _sched else None,
+            'wellness_session_id': self.wellness_session_id,
+            'reminder_session_id': self.reminder_session_id,
+            'session_status': session_status,
             'call_sid': self.call_sid,
             'call_type': self.call_type,
             'attempt_number': self.attempt_number,
