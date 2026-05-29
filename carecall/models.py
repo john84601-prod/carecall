@@ -51,6 +51,9 @@ class Client(db.Model):
             'notes': self.notes,
             'created_at': self.created_at.isoformat() + 'Z',
             'emergency_contacts': [c.to_dict() for c in self.emergency_contacts],
+            'schedule_types': sorted(set(
+                s.call_type for s in self.schedules if s.active
+            )),
         }
 
 

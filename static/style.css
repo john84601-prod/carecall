@@ -698,3 +698,57 @@ hr { border: none; border-top: 1px solid var(--border); }
   white-space: nowrap;
 }
 .schedule-item-meta { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
+
+/* ── Client view toggle ──────────────────────────────────────────────── */
+.view-toggle { display: flex; gap: .25rem; }
+.view-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  line-height: 1;
+  padding: .35rem .5rem;
+  transition: background .15s, color .15s;
+}
+.view-btn:hover  { background: var(--bg); color: var(--text); }
+.view-btn.active { background: var(--teal); border-color: var(--teal); color: #fff; }
+
+/* ── Call-type chips (R / W) on client cards and rows ────────────────── */
+.type-chip {
+  align-items: center;
+  border-radius: 4px;
+  display: inline-flex;
+  font-size: .68rem;
+  font-weight: 800;
+  height: 18px;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
+  width: 18px;
+}
+.type-chip-r { background: #dbeafe; color: #1d4ed8; }
+.type-chip-w { background: #dcfce7; color: #15803d; }
+
+/* ── Clients table (row / list view) ─────────────────────────────────── */
+.clients-table { border-collapse: collapse; width: 100%; }
+.clients-table th,
+.clients-table td {
+  border-bottom: 1px solid var(--border);
+  padding: .55rem .75rem;
+  text-align: left;
+  vertical-align: middle;
+}
+.clients-table thead th {
+  background: var(--bg);
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.clients-table tbody tr:hover { background: #f8fafc; }
+.clients-table .action-btns  { white-space: nowrap; }

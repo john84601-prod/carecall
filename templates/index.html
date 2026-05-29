@@ -87,7 +87,28 @@
   <section id="tab-clients" class="tab">
     <div class="section-head">
       <h2>Clients</h2>
-      <button class="btn-primary" onclick="showClientModal()">+ Add Client</button>
+      <div class="row gap-sm" style="align-items:center">
+        <input type="search" id="clientSearch" placeholder="Search by name or phone…"
+          style="width:230px" oninput="filterAndRenderClients()">
+        <div class="view-toggle">
+          <button id="viewTilesBtn" class="view-btn active" onclick="setClientView('tiles')" title="Tile view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="3" y="3" width="8" height="8" rx="1.5"/>
+              <rect x="13" y="3" width="8" height="8" rx="1.5"/>
+              <rect x="3" y="13" width="8" height="8" rx="1.5"/>
+              <rect x="13" y="13" width="8" height="8" rx="1.5"/>
+            </svg>
+          </button>
+          <button id="viewRowsBtn" class="view-btn" onclick="setClientView('rows')" title="List view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="3" y1="6"  x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <button class="btn-primary" onclick="showClientModal()">+ Add Client</button>
+      </div>
     </div>
     <div id="clientsContainer"></div>
   </section>

@@ -2,6 +2,7 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allClients = [];
+let clientViewMode = 'tiles'; // 'tiles' | 'rows'
 let currentClientId = null;   // client being edited in modal
 let scheduleContacts = [];    // ordered list for the schedule being edited
 let clientContactsCache = []; // client's full emergency contact list (loaded when schedule modal opens)
@@ -144,24 +145,67 @@ async function loadDashboard() {
 async function loadClients() {
   try {
     allClients = await api('GET', '/clients');
-    renderClients();
+    filterAndRenderClients();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-function renderClients() {
+function setClientView(mode) {
+  clientViewMode = mode;
+  document.getElementById('viewTilesBtn').classList.toggle('active', mode === 'tiles');
+  document.getElementById('viewRowsBtn').classList.toggle('active', mode === 'rows');
+  filterAndRenderClients();
+}
+
+function filterAndRenderClients() {
+  const q = (document.getElementById('clientSearch')?.value || '').trim().toLowerCase();
+  const filtered = q
+    ? allClients.filter(c =>
+        c.first_name.toLowerCase().includes(q) ||
+        c.last_name.toLowerCase().includes(q) ||
+        c.full_name.toLowerCase().includes(q) ||
+        c.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        fmtPhone(c.phone).toLowerCase().includes(q))
+    : allClients;
+  renderClients(filtered);
+}
+
+function typeChips(types) {
+  return (types || []).map(t =>
+    t === 'reminder'
+      ? '<span class="type-chip type-chip-r" title="Reminder call">R</span>'
+      : t === 'wellness'
+      ? '<span class="type-chip type-chip-w" title="Wellness check">W</span>'
+      : ''
+  ).join('');
+}
+
+function renderClients(clients) {
   const container = document.getElementById('clientsContainer');
-  if (!allClients.length) {
-    container.innerHTML = '<div class="empty">No clients yet. Click "+ Add Client" to get started.</div>';
+  if (!clients.length) {
+    container.innerHTML = allClients.length
+      ? '<div class="empty">No clients match your search.</div>'
+      : '<div class="empty">No clients yet. Click "+ Add Client" to get started.</div>';
     return;
   }
+  if (clientViewMode === 'rows') {
+    _renderClientRows(clients, container);
+  } else {
+    _renderClientTiles(clients, container);
+  }
+}
+
+function _renderClientTiles(clients, container) {
   container.innerHTML = '<div class="clients-grid">' +
-    allClients.map(c => `
+    clients.map(c => `
       <div class="client-card">
         <div class="client-card-head">
           <div>
-            <div class="client-name">${esc(c.full_name)} ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}</div>
+            <div class="client-name">
+              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}
+              ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}
+            </div>
             <div class="client-phone">${fmtPhone(c.phone)}</div>
           </div>
           <div class="action-btns">
@@ -175,6 +219,44 @@ function renderClients() {
         ${renderEcSummary(c.emergency_contacts)}
       </div>`).join('') +
   '</div>';
+}
+
+function _renderClientRows(clients, container) {
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table class="clients-table">
+        <thead><tr>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Calls</th>
+          <th>Status</th>
+          <th>Emergency Contacts</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${clients.map(c => `
+          <tr>
+            <td>
+              <strong>${esc(c.full_name)}</strong>
+              ${c.birthday ? `<br><small style="color:var(--muted)">${fmtBirthday(c.birthday)}</small>` : ''}
+            </td>
+            <td style="white-space:nowrap">${fmtPhone(c.phone)}</td>
+            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}</td>
+            <td>${c.active
+              ? '<span class="badge badge-green">Active</span>'
+              : '<span class="badge badge-gray">Inactive</span>'}</td>
+            <td style="font-size:.83rem;color:var(--muted)">
+              ${c.emergency_contacts.length
+                ? c.emergency_contacts.map(ec => esc(ec.name)).join(', ')
+                : '—'}
+            </td>
+            <td class="action-btns">
+              <button class="btn-edit btn-sm" onclick="editClient(${c.id})">Edit</button>
+              <button class="btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.full_name)}')">Delete</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function renderEcSummary(contacts) {
