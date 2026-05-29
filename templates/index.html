@@ -176,7 +176,7 @@
       <h3>Test Call</h3>
       <p>Send a test call to verify Twilio is configured correctly.</p>
       <div class="row gap-sm">
-        <input type="tel" id="testPhone" placeholder="+15551234567" class="flex-1">
+        <input type="tel" id="testPhone" placeholder="(555) 123-4567" class="flex-1">
         <button class="btn-primary" onclick="sendTestCall()">Call Now</button>
       </div>
       <div id="testResult" style="margin-top:.75rem"></div>
@@ -207,8 +207,8 @@
           <input type="text" id="clientLastName">
         </div>
         <div class="form-group flex-1" style="margin:0">
-          <label>Phone * <span class="hint">(+15551234567)</span></label>
-          <input type="tel" id="clientPhone" placeholder="+15551234567" required>
+          <label>Phone *</label>
+          <input type="tel" id="clientPhone" placeholder="(555) 123-4567" required>
         </div>
         <div class="form-group" style="width:155px;margin:0">
           <label>Birthday</label>
@@ -357,8 +357,8 @@
         <input type="text" id="contactName" required>
       </div>
       <div class="form-group">
-        <label>Phone * <span class="hint">(E.164 format)</span></label>
-        <input type="tel" id="contactPhone" placeholder="+15551234567" required>
+        <label>Phone *</label>
+        <input type="tel" id="contactPhone" placeholder="(555) 123-4567" required>
       </div>
       <div class="form-group">
         <label>Relationship</label>

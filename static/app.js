@@ -119,7 +119,7 @@ async function loadDashboard() {
       sessPanel.style.display = '';
       sessTbody.innerHTML = d.recent_sessions.map(s => {
         const ackBy = s.acknowledged_by_contact_name
-          ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${esc(s.acknowledged_by_contact_phone || '')}</small>`
+          ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${fmtPhone(s.acknowledged_by_contact_phone || '')}</small>`
           : (s.status === 'escalated' ? '—' : '');
         return `<tr>
           <td>${esc(s.client_name)}</td>
@@ -162,7 +162,7 @@ function renderClients() {
         <div class="client-card-head">
           <div>
             <div class="client-name">${esc(c.full_name)} ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}</div>
-            <div class="client-phone">${esc(c.phone)}</div>
+            <div class="client-phone">${fmtPhone(c.phone)}</div>
           </div>
           <div class="action-btns">
             <button class="btn-edit" onclick="editClient(${c.id})">Edit</button>
@@ -186,7 +186,7 @@ function renderEcSummary(contacts) {
       <div class="ec-item">
         <span class="ec-priority">${ec.priority}</span>
         <span style="flex:1">${esc(ec.name)}${ec.relationship ? ' <span style="color:var(--muted)">(' + esc(ec.relationship) + ')</span>' : ''}</span>
-        <span style="color:var(--muted)">${esc(ec.phone)}</span>
+        <span style="color:var(--muted)">${fmtPhone(ec.phone)}</span>
       </div>`).join('') +
   '</div>';
 }
@@ -318,7 +318,7 @@ async function loadContactsList(clientId) {
         <span class="ec-priority">${c.priority}</span>
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
-          <br><span style="color:var(--muted)">${esc(c.phone)}</span>
+          <br><span style="color:var(--muted)">${fmtPhone(c.phone)}</span>
           ${c.can_text ? ' <span class="badge badge-blue" style="font-size:.7rem">Can Text</span>' : ''}
         </span>
         <div class="action-btns">
@@ -348,7 +348,7 @@ function editContact(id, name, phone, rel, priority, canText) {
   document.getElementById('contactModalTitle').textContent = 'Edit Emergency Contact';
   document.getElementById('contactId').value = id;
   document.getElementById('contactName').value = name;
-  document.getElementById('contactPhone').value = phone;
+  document.getElementById('contactPhone').value = fmtPhone(phone);
   document.getElementById('contactRelationship').value = rel;
   document.getElementById('contactPriority').value = priority;
   document.getElementById('contactCanText').checked = !!canText;
@@ -787,7 +787,7 @@ function renderScheduleEcList() {
         <span class="ec-priority">${i + 1}</span>
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
-          <br><span style="color:var(--muted);font-size:.82rem">${esc(c.phone)}</span>
+          <br><span style="color:var(--muted);font-size:.82rem">${fmtPhone(c.phone)}</span>
         </span>
         <div class="action-btns">
           <button type="button" class="btn-ghost btn-sm" title="Move up"
@@ -1091,6 +1091,16 @@ async function loadClientsIfNeeded() {
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtPhone(e164) {
+  if (!e164) return '';
+  const digits = String(e164).replace(/\D/g, '');
+  const local = (digits.length === 11 && digits[0] === '1') ? digits.slice(1) : digits;
+  if (local.length === 10) {
+    return `(${local.slice(0,3)}) ${local.slice(3,6)}-${local.slice(6)}`;
+  }
+  return e164; // non-US fallback — show as-is
 }
 
 function fmtBirthday(iso) {

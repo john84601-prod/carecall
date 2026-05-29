@@ -25,7 +25,7 @@ def create_client():
     client = Client(
         first_name=data['first_name'].strip(),
         last_name=data.get('last_name', '').strip(),
-        phone=data['phone'].strip(),
+        phone=_normalize_phone(data['phone']),
         address1=data.get('address1', '').strip(),
         address2=data.get('address2', '').strip(),
         city=data.get('city', '').strip(),
@@ -50,7 +50,7 @@ def update_client(client_id):
     data = request.get_json()
     client.first_name = data.get('first_name', client.first_name).strip()
     client.last_name  = data.get('last_name',  client.last_name).strip()
-    client.phone    = data.get('phone',    client.phone)
+    client.phone    = _normalize_phone(data.get('phone', client.phone))
     client.address1 = data.get('address1', client.address1).strip()
     client.address2 = data.get('address2', client.address2).strip()
     client.city     = data.get('city',     client.city).strip()
@@ -93,7 +93,7 @@ def create_contact(client_id):
     contact = EmergencyContact(
         client_id=client_id,
         name=data['name'],
-        phone=data['phone'],
+        phone=_normalize_phone(data['phone']),
         relationship=data.get('relationship', ''),
         priority=data.get('priority', 1),
         can_text=bool(data.get('can_text', False)),
@@ -108,7 +108,7 @@ def update_contact(contact_id):
     contact = db.get_or_404(EmergencyContact, contact_id)
     data = request.get_json()
     contact.name = data.get('name', contact.name)
-    contact.phone = data.get('phone', contact.phone)
+    contact.phone = _normalize_phone(data.get('phone', contact.phone))
     contact.relationship = data.get('relationship', contact.relationship)
     contact.priority = data.get('priority', contact.priority)
     if 'can_text' in data:
@@ -426,9 +426,9 @@ def test_call():
     from carecall.twilio_client import make_call
     from carecall.tunnel import get_public_url
     data = request.get_json()
-    to = (data or {}).get('to', '').strip()
+    to = _normalize_phone((data or {}).get('to', ''))
     if not to:
-        return jsonify({'error': 'Phone number required (E.164 format, e.g. +15551234567)'}), 400
+        return jsonify({'error': 'Phone number required'}), 400
     try:
         base = get_public_url()
         sid = make_call(to, f"{base}/webhook/test", f"{base}/webhook/test")
@@ -438,6 +438,25 @@ def test_call():
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _normalize_phone(raw):
+    """Normalize a US phone number to E.164 (+1XXXXXXXXXX).
+
+    Accepts any common format: (555) 123-4567, 555-123-4567,
+    5551234567, 15551234567, +15551234567, etc.
+    Returns the normalized E.164 string, or the original value if it
+    can't be interpreted as a 10- or 11-digit US number.
+    """
+    if not raw:
+        return raw
+    digits = re.sub(r'\D', '', str(raw))
+    if len(digits) == 10:
+        return '+1' + digits
+    if len(digits) == 11 and digits[0] == '1':
+        return '+' + digits
+    # Already non-US or unrecognised — return stripped but don't mangle
+    return raw.strip()
+
 
 def _parse_date(value):
     """Parse a YYYY-MM-DD string into a date object, or return None."""
