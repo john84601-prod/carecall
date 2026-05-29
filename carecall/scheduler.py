@@ -188,7 +188,7 @@ def handle_reminder_no_response(session_id):
         from carecall.models import ReminderSession, db
 
         session = db.session.get(ReminderSession, session_id)
-        if not session or session.status in ('reached_human', 'left_voicemail', 'failed'):
+        if not session or session.status in ('reached_human', 'left_voicemail', 'failed', 'cancelled'):
             return  # Already resolved — nothing to do
 
         schedule = session.schedule
@@ -265,7 +265,7 @@ def _attempt_wellness_call(session_id):
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
-        if not session:
+        if not session or session.status == 'cancelled':
             return
 
         session.current_attempt += 1
@@ -307,7 +307,7 @@ def handle_wellness_no_response(session_id):
         from carecall.models import WellnessSession, db
 
         session = db.session.get(WellnessSession, session_id)
-        if not session or session.status in ('acknowledged', 'escalating', 'escalated', 'failed'):
+        if not session or session.status in ('acknowledged', 'escalating', 'escalated', 'failed', 'cancelled'):
             return
 
         schedule = session.schedule
@@ -343,7 +343,7 @@ def _call_next_emergency_contact(session_id):
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
-        if not session:
+        if not session or session.status == 'cancelled':
             return
 
         already_called = session.get_contacts_called()
@@ -417,7 +417,7 @@ def handle_emergency_no_response(session_id, contact_id):
         from carecall.models import WellnessSession, db
 
         session = db.session.get(WellnessSession, session_id)
-        if not session or session.emergency_acknowledged:
+        if not session or session.emergency_acknowledged or session.status == 'cancelled':
             return
 
         logger.info(f"Session {session_id}: emergency contact {contact_id} did not acknowledge — trying next")

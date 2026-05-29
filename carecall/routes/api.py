@@ -367,6 +367,34 @@ def get_logs():
     return jsonify([l.to_dict() for l in logs])
 
 
+@api_bp.route('/wellness-sessions/<int:session_id>/cancel', methods=['POST'])
+def cancel_wellness_session(session_id):
+    """Immediately stop a wellness session and all pending retries/escalations."""
+    from datetime import datetime
+    from carecall.models import WellnessSession
+    session = db.get_or_404(WellnessSession, session_id)
+    if session.status not in ('pending', 'calling', 'escalating'):
+        return jsonify({'error': 'Session is not active'}), 400
+    session.status = 'cancelled'
+    session.resolved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@api_bp.route('/reminder-sessions/<int:session_id>/cancel', methods=['POST'])
+def cancel_reminder_session(session_id):
+    """Immediately stop a reminder retry session."""
+    from datetime import datetime
+    from carecall.models import ReminderSession
+    session = db.get_or_404(ReminderSession, session_id)
+    if session.status not in ('pending', 'calling'):
+        return jsonify({'error': 'Session is not active'}), 400
+    session.status = 'cancelled'
+    session.resolved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @api_bp.route('/sessions', methods=['GET'])
 def get_sessions():
     sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(50).all()
@@ -389,9 +417,9 @@ def dashboard():
     active_sessions = WellnessSession.query.filter(
         WellnessSession.status.in_(['pending', 'calling', 'escalating'])
     ).count()
-    active_reminder_sessions = ReminderSession.query.filter(
+    active_reminder_sessions_qs = ReminderSession.query.filter(
         ReminderSession.status.in_(['pending', 'calling'])
-    ).count()
+    ).order_by(ReminderSession.started_at.desc()).all()
     recent_logs = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
     recent_sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(10).all()
     return jsonify({
@@ -399,7 +427,8 @@ def dashboard():
         'active_schedules': active_schedules,
         'calls_today': calls_today,
         'active_sessions': active_sessions,
-        'active_reminder_sessions': active_reminder_sessions,
+        'active_reminder_sessions': len(active_reminder_sessions_qs),
+        'active_reminder_sessions_list': [s.to_dict() for s in active_reminder_sessions_qs],
         'recent_logs': [l.to_dict() for l in recent_logs],
         'recent_sessions': [s.to_dict() for s in recent_sessions],
     })

@@ -75,9 +75,23 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Client</th><th>Status</th><th>Attempts</th><th>Started</th><th>Resolved</th><th>Acknowledged By</th>
+            <th>Client</th><th>Status</th><th>Attempts</th><th>Started</th><th>Resolved</th><th>Acknowledged By</th><th></th>
           </tr></thead>
           <tbody id="wellnessSessionsTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="reminderSessionsPanel" style="display:none;margin-top:2rem">
+      <div class="section-head">
+        <h2>Active Reminder Retries</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Client</th><th>Schedule</th><th>Attempts</th><th>Started</th><th></th>
+          </tr></thead>
+          <tbody id="reminderSessionsTable"></tbody>
         </table>
       </div>
     </div>

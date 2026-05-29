@@ -118,10 +118,14 @@ async function loadDashboard() {
     const sessTbody = document.getElementById('wellnessSessionsTable');
     if (d.recent_sessions && d.recent_sessions.length) {
       sessPanel.style.display = '';
+      const activeStatuses = new Set(['pending', 'calling', 'escalating']);
       sessTbody.innerHTML = d.recent_sessions.map(s => {
         const ackBy = s.acknowledged_by_contact_name
           ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${fmtPhone(s.acknowledged_by_contact_phone || '')}</small>`
           : (s.status === 'escalated' ? '—' : '');
+        const stopBtn = activeStatuses.has(s.status)
+          ? `<button class="btn-danger btn-sm" onclick="cancelWellnessSession(${s.id})">⏹ Stop</button>`
+          : '';
         return `<tr>
           <td>${esc(s.client_name)}</td>
           <td>${wellnessSessionBadge(s.status)}</td>
@@ -129,10 +133,28 @@ async function loadDashboard() {
           <td style="white-space:nowrap">${fmtTime(s.started_at)}</td>
           <td style="white-space:nowrap">${s.resolved_at ? fmtTime(s.resolved_at) : '—'}</td>
           <td>${ackBy || '—'}</td>
+          <td>${stopBtn}</td>
         </tr>`;
       }).join('');
     } else {
       sessPanel.style.display = 'none';
+    }
+
+    // Active reminder sessions panel
+    const remPanel = document.getElementById('reminderSessionsPanel');
+    const remTbody = document.getElementById('reminderSessionsTable');
+    if (d.active_reminder_sessions_list && d.active_reminder_sessions_list.length) {
+      remPanel.style.display = '';
+      remTbody.innerHTML = d.active_reminder_sessions_list.map(s => `
+        <tr>
+          <td>${esc(s.client_name)}</td>
+          <td>${esc(s.schedule_name || '—')}</td>
+          <td>${s.current_attempt}</td>
+          <td style="white-space:nowrap">${fmtTime(s.started_at)}</td>
+          <td><button class="btn-danger btn-sm" onclick="cancelReminderSession(${s.id})">⏹ Stop</button></td>
+        </tr>`).join('');
+    } else {
+      if (remPanel) remPanel.style.display = 'none';
     }
 
     document.getElementById('statusDot').className = 'status-dot online';
@@ -303,7 +325,7 @@ async function editClient(id) {
   document.getElementById('clientId').value = c.id;
   document.getElementById('clientFirstName').value = c.first_name;
   document.getElementById('clientLastName').value = c.last_name;
-  document.getElementById('clientPhone').value = c.phone;
+  document.getElementById('clientPhone').value = fmtPhone(c.phone);
   document.getElementById('clientBirthday').value = c.birthday || '';
   document.getElementById('clientAddress1').value = c.address1 || '';
   document.getElementById('clientAddress2').value = c.address2 || '';
@@ -647,9 +669,13 @@ function renderClientSchedules(schedules) {
           <div class="schedule-item-title">${esc(title)} ${typeBadge(s.call_type)}</div>
           <div class="schedule-item-meta">${meta}</div>
         </div>
-        <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''}
-          title="${s.active ? 'Active' : 'Inactive'}"
-          onchange="toggleClientSchedule(${s.id}, this.checked)">
+        <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.8rem;color:var(--muted);white-space:nowrap">
+          <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''}
+            onchange="toggleClientSchedule(${s.id}, this.checked, this.closest('label').querySelector('.sched-active-lbl'))">
+          <span class="sched-active-lbl" style="color:${s.active ? 'var(--green)' : 'var(--muted)'}">
+            ${s.active ? 'Active' : 'Inactive'}
+          </span>
+        </label>
         <div class="action-btns">
           <button class="btn-edit btn-sm" onclick="editClientSchedule(${s.id})">Edit</button>
           <button class="btn-danger btn-sm" onclick="deleteClientSchedule(${s.id})">Delete</button>
@@ -798,11 +824,16 @@ async function saveSchedule(e) {
   }
 }
 
-async function toggleClientSchedule(id, active) {
+async function toggleClientSchedule(id, active, labelEl) {
+  // Optimistic UI update
+  if (labelEl) {
+    labelEl.textContent = active ? 'Active' : 'Inactive';
+    labelEl.style.color = active ? 'var(--green)' : 'var(--muted)';
+  }
   try {
     await api('PUT', `/schedules/${id}`, { active });
     toast(active ? 'Schedule activated' : 'Schedule paused');
-    await loadClientSchedules(currentClientId);
+    await loadClients(); // refresh type chips on client cards
   } catch (e) {
     toast(e.message, 'error');
     await loadClientSchedules(currentClientId);
@@ -1243,15 +1274,38 @@ function statusBadge(s) {
 
 function wellnessSessionBadge(s) {
   const map = {
-    pending:    ['badge-orange', 'Pending'],
-    calling:    ['badge-blue',   'Calling'],
-    acknowledged: ['badge-green', 'Acknowledged'],
-    escalating: ['badge-orange', 'Escalating'],
-    escalated:  ['badge-green',  'Escalated'],
-    failed:     ['badge-red',    'Failed'],
+    pending:      ['badge-orange', 'Pending'],
+    calling:      ['badge-blue',   'Calling'],
+    acknowledged: ['badge-green',  'Acknowledged'],
+    escalating:   ['badge-orange', 'Escalating'],
+    escalated:    ['badge-green',  'Escalated'],
+    failed:       ['badge-red',    'Failed'],
+    cancelled:    ['badge-gray',   'Cancelled'],
   };
   const [cls, label] = map[s] || ['badge-gray', s];
   return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function cancelWellnessSession(id) {
+  if (!confirm('Stop this wellness session? No further calls will be made.')) return;
+  try {
+    await api('POST', `/wellness-sessions/${id}/cancel`);
+    toast('Session stopped', 'success');
+    await loadDashboard();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function cancelReminderSession(id) {
+  if (!confirm('Stop this reminder session? No further retry calls will be made.')) return;
+  try {
+    await api('POST', `/reminder-sessions/${id}/cancel`);
+    toast('Reminder stopped', 'success');
+    await loadDashboard();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 function typeBadge(t) {
