@@ -57,6 +57,14 @@ header {
 }
 .status-dot.online  { background: var(--green); }
 .status-dot.offline { background: var(--red); }
+.header-right { display: flex; align-items: center; gap: .9rem; }
+.header-signout {
+  color: rgba(255,255,255,.55);
+  font-size: .82rem;
+  text-decoration: none;
+  transition: color .15s;
+}
+.header-signout:hover { color: #fff; }
 
 /* ── Nav ─────────────────────────────────────────────────────────────── */
 nav {

@@ -1,14 +1,40 @@
+import logging
 import os
 from datetime import datetime
 from threading import Thread
 
 from flask import Blueprint, request, Response
+from twilio.request_validator import RequestValidator
 from twilio.twiml.voice_response import VoiceResponse, Gather
 
 from carecall import db
 from carecall.models import CallLog, WellnessSession, EmergencyContact
 
+logger = logging.getLogger(__name__)
+
 webhooks_bp = Blueprint('webhooks', __name__)
+
+
+@webhooks_bp.before_request
+def _validate_twilio_signature():
+    """Reject any request that doesn't carry a valid Twilio signature.
+
+    Twilio signs every callback with the account's Auth Token.
+    ProxyFix in create_app() ensures request.url reflects the public
+    ngrok URL that Twilio was given, so the HMAC check matches.
+    """
+    auth_token = os.getenv('TWILIO_AUTH_TOKEN', '')
+    if not auth_token:
+        logger.warning('TWILIO_AUTH_TOKEN not set — skipping webhook signature validation')
+        return
+
+    validator  = RequestValidator(auth_token)
+    signature  = request.headers.get('X-Twilio-Signature', '')
+    params     = request.form.to_dict() if request.method == 'POST' else {}
+
+    if not validator.validate(request.url, params, signature):
+        logger.warning(f'Invalid Twilio signature rejected: {request.url} from {request.remote_addr}')
+        return Response('Forbidden', status=403)
 
 
 def _xml(vr):

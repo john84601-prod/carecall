@@ -1,6 +1,9 @@
 import os
-from flask import Flask
+from datetime import timedelta
+
+from flask import Flask, redirect, request, session
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 db = SQLAlchemy()
 
@@ -21,18 +24,36 @@ def create_app():
         os.path.dirname(os.path.dirname(__file__)), 'uploads'
     )
     app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+
+    # Trust X-Forwarded-Proto / X-Forwarded-Host from ngrok so that
+    # request.url reflects the public HTTPS URL (required for Twilio signature validation).
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
     db.init_app(app)
 
     from carecall.routes.api import api_bp
+    from carecall.routes.auth import auth_bp
     from carecall.routes.webhooks import webhooks_bp
     from carecall.routes.ui import ui_bp
 
+    app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(webhooks_bp, url_prefix='/webhook')
     app.register_blueprint(ui_bp)
+
+    # ── Login guard ───────────────────────────────────────────────────────
+    # Exempt: static assets, webhook callbacks (Twilio), and the login/logout pages.
+    _EXEMPT = ('/static/', '/webhook/', '/login', '/logout')
+
+    @app.before_request
+    def _require_login():
+        if any(request.path.startswith(p) for p in _EXEMPT):
+            return
+        if not session.get('authenticated'):
+            return redirect(f'/login?next={request.path}')
 
     with app.app_context():
         db.create_all()
