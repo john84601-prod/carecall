@@ -134,15 +134,18 @@
         <input type="search" id="filterPhone" placeholder="Phone number…" oninput="filterAndRenderClients()">
       </div>
       <div class="filter-divider"></div>
-      <div class="filter-checks">
-        <label class="filter-check">
-          <input type="checkbox" id="filterReminder" onchange="filterAndRenderClients()">
-          <span class="type-chip type-chip-r">R</span> Reminder
-        </label>
-        <label class="filter-check">
-          <input type="checkbox" id="filterWellness" onchange="filterAndRenderClients()">
-          <span class="type-chip type-chip-w">W</span> Wellness
-        </label>
+      <div class="filter-status-group">
+        <div class="filter-group-label">Call Type</div>
+        <div class="filter-checks">
+          <label class="filter-check">
+            <input type="checkbox" id="filterReminder" onchange="filterAndRenderClients()">
+            <span class="type-chip type-chip-r">R</span> Reminder
+          </label>
+          <label class="filter-check">
+            <input type="checkbox" id="filterWellness" onchange="filterAndRenderClients()">
+            <span class="type-chip type-chip-w">W</span> Wellness
+          </label>
+        </div>
       </div>
       <div class="filter-divider"></div>
       <div class="filter-status-group">
@@ -152,6 +155,11 @@
           <label><input type="radio" name="clientStatus" value="inactive" onchange="filterAndRenderClients()"><span>Inactive</span></label>
           <label><input type="radio" name="clientStatus" value="all" onchange="filterAndRenderClients()"><span>Both</span></label>
         </div>
+      </div>
+      <div class="filter-divider"></div>
+      <div class="filter-status-group">
+        <div class="filter-group-label">&nbsp;</div>
+        <button type="button" class="filter-clear-btn" onclick="clearClientFilters()">Clear Filters</button>
       </div>
       <div class="filter-divider"></div>
       <div class="filter-status-group">

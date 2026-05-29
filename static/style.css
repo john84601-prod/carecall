@@ -860,3 +860,16 @@ hr { border: none; border-top: 1px solid var(--border); }
   white-space: nowrap;
 }
 .filter-sort-btn:hover { background: #e2e6ec; border-color: var(--muted); }
+.filter-clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 500;
+  padding: .35rem .8rem;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.filter-clear-btn:hover { background: #fdecea; border-color: #e8a09a; color: var(--red); }

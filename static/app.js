@@ -188,6 +188,20 @@ function toggleClientSort() {
   filterAndRenderClients();
 }
 
+function clearClientFilters() {
+  const nameEl     = document.getElementById('filterName');
+  const phoneEl    = document.getElementById('filterPhone');
+  const reminderEl = document.getElementById('filterReminder');
+  const wellnessEl = document.getElementById('filterWellness');
+  const activeEl   = document.querySelector('input[name="clientStatus"][value="active"]');
+  if (nameEl)     nameEl.value = '';
+  if (phoneEl)    phoneEl.value = '';
+  if (reminderEl) reminderEl.checked = false;
+  if (wellnessEl) wellnessEl.checked = false;
+  if (activeEl)   activeEl.checked = true;
+  filterAndRenderClients();
+}
+
 function filterAndRenderClients() {
   const name   = (document.getElementById('filterName')?.value  || '').trim().toLowerCase();
   const phone  = (document.getElementById('filterPhone')?.value || '').trim().replace(/\D/g, '');
