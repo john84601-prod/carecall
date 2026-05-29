@@ -4,7 +4,7 @@
 let allClients = [];
 let clientViewMode = 'tiles'; // 'tiles' | 'rows'
 let currentClientId = null;   // client being edited in modal
-let scheduleContacts = [];    // ordered list for the schedule being edited
+let scheduleContacts = [];    // array of emergency_contact_id values active for the schedule being edited
 let clientContactsCache = []; // client's full emergency contact list (loaded when schedule modal opens)
 let allAudioFiles = [];       // full audio file list for Audio tab (client-side search)
 let recordingContext = 'global'; // 'global' | 'client' — where to route the active recording
@@ -745,21 +745,8 @@ async function editClientSchedule(id) {
     document.getElementById('scheduleMaxAttempts').value  = s.max_attempts || 3;
     document.getElementById('scheduleInterval').value     = s.attempt_interval_minutes || 10;
 
-    // Load per-schedule emergency contacts
-    scheduleContacts = (s.schedule_contacts || []).map(sc => ({
-      emergency_contact_id: sc.emergency_contact_id,
-      name: sc.name,
-      phone: sc.phone,
-      relationship: sc.relationship || '',
-      can_text: sc.can_text,
-    }));
-
-    // Reset then conditionally expand EC collapsible
-    const schedEcBody = document.getElementById('schedEcBody');
-    const schedEcTog  = document.getElementById('schedEcToggle');
-    const hasEcContacts = scheduleContacts.length > 0 && s.call_type === 'wellness';
-    if (schedEcBody) schedEcBody.style.display = hasEcContacts ? '' : 'none';
-    if (schedEcTog)  schedEcTog.querySelector('.caret-char').textContent = hasEcContacts ? '▼' : '▶';
+    // Load per-schedule emergency contacts — track which contact IDs are active
+    scheduleContacts = (s.schedule_contacts || []).map(sc => sc.emergency_contact_id);
 
     resetAudioPreview();
     toggleScheduleFields();
@@ -778,13 +765,20 @@ async function saveSchedule(e) {
     .map(cb => cb.value).join(',');
   if (!days) { toast('Select at least one Call Day', 'error'); return; }
 
+  const callType = document.querySelector('input[name="callType"]:checked').value;
+  const isActive = document.getElementById('scheduleActive').checked;
+
+  // Validate EC requirement before touching the API
+  if (callType === 'wellness' && isActive && scheduleContacts.length === 0) {
+    toast('At least one emergency contact must be active for an active wellness schedule', 'error');
+    return;
+  }
+
   const time24 = _to24h(
     document.getElementById('scheduleHour').value,
     document.getElementById('scheduleMinute').value,
     document.getElementById('scheduleAmPm').value,
   );
-
-  const callType = document.querySelector('input[name="callType"]:checked').value;
 
   const payload = {
     client_id:                parseInt(clientId),
@@ -811,7 +805,7 @@ async function saveSchedule(e) {
     // Save per-schedule emergency contacts (wellness only)
     if (callType === 'wellness') {
       await api('PUT', `/schedules/${scheduleId}/contacts`,
-        scheduleContacts.map(c => ({ emergency_contact_id: c.emergency_contact_id }))
+        scheduleContacts.map(id => ({ emergency_contact_id: id }))
       );
     }
     closeOverlay('scheduleOverlay');
@@ -857,13 +851,11 @@ function toggleScheduleFields() {
     : '(required — select a recorded file)';
   if (type === 'wellness') {
     renderScheduleEcList();
-    // Auto-expand EC collapsible if contacts are already assigned
-    if (scheduleContacts.length > 0) {
-      const body = document.getElementById('schedEcBody');
-      const tog  = document.getElementById('schedEcToggle');
-      if (body) body.style.display = '';
-      if (tog)  tog.querySelector('.caret-char').textContent = '▼';
-    }
+    // Always expand EC collapsible for wellness schedules
+    const body = document.getElementById('schedEcBody');
+    const tog  = document.getElementById('schedEcToggle');
+    if (body) body.style.display = '';
+    if (tog)  tog.querySelector('.caret-char').textContent = '▼';
   }
 }
 
@@ -885,75 +877,47 @@ function renderScheduleEcList() {
   // Update count badge in collapsible header
   const countEl = document.getElementById('schedEcCount');
   if (countEl) countEl.textContent = scheduleContacts.length
-    ? `(${scheduleContacts.length} assigned)`
-    : '(none — uses client contact list)';
+    ? `(${scheduleContacts.length} active)`
+    : '(none)';
 
-  if (!scheduleContacts.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.25rem 0">None assigned — will fall back to the client\'s contact list.</div>';
-  } else {
-    el.innerHTML = scheduleContacts.map((c, i) => `
-      <div class="ec-item" style="margin-bottom:.3rem">
-        <span class="ec-priority">${i + 1}</span>
+  if (!clientContactsCache.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.25rem 0">No emergency contacts on file. Add them in the Contacts tab first.</div>';
+    return;
+  }
+
+  el.innerHTML = clientContactsCache.map(c => {
+    const isActive = scheduleContacts.includes(c.id);
+    return `
+      <div class="ec-item" style="margin-bottom:.4rem">
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
           <br><span style="color:var(--muted);font-size:.82rem">${fmtPhone(c.phone)}</span>
         </span>
-        <div class="action-btns">
-          <button type="button" class="btn-ghost btn-sm" title="Move up"
-            onclick="moveScheduleContact(${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
-          <button type="button" class="btn-ghost btn-sm" title="Move down"
-            onclick="moveScheduleContact(${i}, 1)" ${i === scheduleContacts.length - 1 ? 'disabled' : ''}>▼</button>
-          <button type="button" class="btn-danger btn-sm" onclick="removeScheduleContact(${i})">✕</button>
-        </div>
-      </div>`).join('');
-  }
-
-  // Refresh dropdown to show only unassigned contacts
-  const assignedIds = new Set(scheduleContacts.map(c => c.emergency_contact_id));
-  const available = clientContactsCache.filter(c => !assignedIds.has(c.id));
-  const sel = document.getElementById('scheduleEcAdd');
-  if (sel) {
-    sel.innerHTML = '<option value="">— add a contact from the client\'s list —</option>' +
-      available.map(c =>
-        `<option value="${c.id}">${esc(c.name)}${c.relationship ? ' (' + esc(c.relationship) + ')' : ''}</option>`
-      ).join('');
-  }
-
-  const hint = document.getElementById('scheduleEcHint');
-  if (hint) {
-    hint.textContent = clientContactsCache.length === 0
-      ? 'Add emergency contacts to this client\'s profile first.'
-      : '';
-  }
+        <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.8rem;white-space:nowrap">
+          <input type="checkbox" class="toggle" ${isActive ? 'checked' : ''}
+            onchange="toggleScheduleContact(${c.id}, this.checked, this.closest('label').querySelector('.ec-active-lbl'))">
+          <span class="ec-active-lbl" style="color:${isActive ? 'var(--green)' : 'var(--muted)'}">
+            ${isActive ? 'Active' : 'Inactive'}
+          </span>
+        </label>
+      </div>`;
+  }).join('');
 }
 
-function addScheduleContact() {
-  const sel = document.getElementById('scheduleEcAdd');
-  const id = parseInt(sel.value);
-  if (!id) return;
-  const contact = clientContactsCache.find(c => c.id === id);
-  if (!contact) return;
-  scheduleContacts.push({
-    emergency_contact_id: contact.id,
-    name: contact.name,
-    phone: contact.phone,
-    relationship: contact.relationship || '',
-    can_text: contact.can_text,
-  });
-  renderScheduleEcList();
-}
-
-function moveScheduleContact(index, dir) {
-  const newIndex = index + dir;
-  if (newIndex < 0 || newIndex >= scheduleContacts.length) return;
-  [scheduleContacts[index], scheduleContacts[newIndex]] =
-    [scheduleContacts[newIndex], scheduleContacts[index]];
-  renderScheduleEcList();
-}
-
-function removeScheduleContact(index) {
-  scheduleContacts.splice(index, 1);
-  renderScheduleEcList();
+function toggleScheduleContact(contactId, active, labelEl) {
+  if (active) {
+    if (!scheduleContacts.includes(contactId)) scheduleContacts.push(contactId);
+  } else {
+    scheduleContacts = scheduleContacts.filter(id => id !== contactId);
+  }
+  if (labelEl) {
+    labelEl.textContent = active ? 'Active' : 'Inactive';
+    labelEl.style.color = active ? 'var(--green)' : 'var(--muted)';
+  }
+  const countEl = document.getElementById('schedEcCount');
+  if (countEl) countEl.textContent = scheduleContacts.length
+    ? `(${scheduleContacts.length} active)`
+    : '(none)';
 }
 
 // ── Time picker helpers ────────────────────────────────────────────────────────
