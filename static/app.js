@@ -82,7 +82,16 @@ async function loadDashboard() {
     const d = await api('GET', '/dashboard');
     document.getElementById('statClients').textContent   = d.active_clients;
     document.getElementById('statSchedules').textContent = d.active_schedules;
-    document.getElementById('statToday').textContent     = d.calls_today;
+
+    document.getElementById('statReminderScheduled').textContent = d.active_reminder_schedules;
+    document.getElementById('statReminderCompleted').textContent = d.reminder_completed_today;
+    document.getElementById('statReminderCalls').textContent     = d.reminder_calls_today;
+
+    document.getElementById('statWellnessScheduled').textContent = d.active_wellness_schedules;
+    document.getElementById('statWellnessCompleted').textContent = d.wellness_completed_today;
+    document.getElementById('statWellnessCalls').textContent     = d.wellness_calls_today;
+
+    document.getElementById('statAlertCycles').textContent = d.alert_cycles_today;
 
     const sc = document.getElementById('sessionCard');
     if (d.active_sessions > 0) {

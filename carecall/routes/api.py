@@ -410,26 +410,73 @@ def get_reminder_sessions():
 @api_bp.route('/dashboard', methods=['GET'])
 def dashboard():
     from datetime import datetime, timezone
+    from sqlalchemy import func, distinct as sa_distinct
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    active_clients = Client.query.filter_by(active=True).count()
+
+    # Core counts
+    active_clients   = Client.query.filter_by(active=True).count()
     active_schedules = Schedule.query.filter_by(active=True).count()
-    calls_today = CallLog.query.filter(CallLog.timestamp >= today_start).count()
+
+    # Reminder stats
+    active_reminder_schedules  = Schedule.query.filter_by(active=True, call_type='reminder').count()
+    reminder_completed_today   = ReminderSession.query.filter(
+        ReminderSession.started_at >= today_start,
+        ReminderSession.status.in_(['reached_human', 'left_voicemail']),
+    ).count()
+    reminder_calls_today = CallLog.query.filter(
+        CallLog.timestamp >= today_start,
+        CallLog.call_type == 'reminder',
+    ).count()
+
+    # Wellness stats
+    active_wellness_schedules = Schedule.query.filter_by(active=True, call_type='wellness').count()
+    wellness_completed_today  = WellnessSession.query.filter(
+        WellnessSession.started_at >= today_start,
+        WellnessSession.status.in_(['acknowledged', 'escalated']),
+    ).count()
+    wellness_calls_today = CallLog.query.filter(
+        CallLog.timestamp >= today_start,
+        CallLog.call_type == 'wellness',
+    ).count()
+
+    # Alert cycles today = distinct wellness sessions where an emergency call was made today
+    alert_cycles_today = db.session.query(
+        func.count(sa_distinct(CallLog.wellness_session_id))
+    ).filter(
+        CallLog.call_type == 'emergency',
+        CallLog.timestamp >= today_start,
+    ).scalar() or 0
+
+    # Active/in-progress sessions
     active_sessions = WellnessSession.query.filter(
         WellnessSession.status.in_(['pending', 'calling', 'escalating'])
     ).count()
     active_reminder_sessions_qs = ReminderSession.query.filter(
         ReminderSession.status.in_(['pending', 'calling'])
     ).order_by(ReminderSession.started_at.desc()).all()
-    recent_logs = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
+
+    recent_logs     = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
     recent_sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(10).all()
+
     return jsonify({
-        'active_clients': active_clients,
+        'active_clients':   active_clients,
         'active_schedules': active_schedules,
-        'calls_today': calls_today,
+        # Reminder breakdown
+        'active_reminder_schedules':  active_reminder_schedules,
+        'reminder_completed_today':   reminder_completed_today,
+        'reminder_calls_today':       reminder_calls_today,
+        # Wellness breakdown
+        'active_wellness_schedules':  active_wellness_schedules,
+        'wellness_completed_today':   wellness_completed_today,
+        'wellness_calls_today':       wellness_calls_today,
+        # Alert cycles
+        'alert_cycles_today': alert_cycles_today,
+        # In-progress sessions (drive the conditional alert cards)
         'active_sessions': active_sessions,
         'active_reminder_sessions': len(active_reminder_sessions_qs),
         'active_reminder_sessions_list': [s.to_dict() for s in active_reminder_sessions_qs],
-        'recent_logs': [l.to_dict() for l in recent_logs],
+        # Detail panels
+        'recent_logs':     [l.to_dict() for l in recent_logs],
         'recent_sessions': [s.to_dict() for s in recent_sessions],
     })
 

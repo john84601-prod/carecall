@@ -33,26 +33,82 @@
   <!-- ── Dashboard ─────────────────────────────────────────────────── -->
   <section id="tab-dashboard" class="tab active">
     <div class="stats-row">
+
+      <!-- Clients + Schedules combined -->
       <div class="stat-card">
-        <div class="stat-num" id="statClients">—</div>
-        <div class="stat-label">Active Clients</div>
+        <div class="stat-multi">
+          <div class="stat-col">
+            <div class="stat-num" id="statClients">—</div>
+            <div class="stat-label">Active Clients</div>
+          </div>
+          <div class="stat-pipe">|</div>
+          <div class="stat-col">
+            <div class="stat-num" id="statSchedules">—</div>
+            <div class="stat-label">Active Scheduled Calls</div>
+          </div>
+        </div>
       </div>
+
+      <!-- Reminder Calls breakdown -->
+      <div class="stat-card stat-card-wide">
+        <div class="stat-card-title">Reminder Calls</div>
+        <div class="stat-multi">
+          <div class="stat-col">
+            <div class="stat-num" id="statReminderScheduled">—</div>
+            <div class="stat-label">Active Reminders Scheduled</div>
+          </div>
+          <div class="stat-pipe">|</div>
+          <div class="stat-col">
+            <div class="stat-num" id="statReminderCompleted">—</div>
+            <div class="stat-label">Active Reminders Completed</div>
+          </div>
+          <div class="stat-pipe">|</div>
+          <div class="stat-col">
+            <div class="stat-num" id="statReminderCalls">—</div>
+            <div class="stat-label">Total Reminder Calls Made</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wellness Checks breakdown -->
+      <div class="stat-card stat-card-wide">
+        <div class="stat-card-title">Wellness Checks</div>
+        <div class="stat-multi">
+          <div class="stat-col">
+            <div class="stat-num" id="statWellnessScheduled">—</div>
+            <div class="stat-label">Active Wellness Checks Scheduled</div>
+          </div>
+          <div class="stat-pipe">|</div>
+          <div class="stat-col">
+            <div class="stat-num" id="statWellnessCompleted">—</div>
+            <div class="stat-label">Active Wellness Checks Completed</div>
+          </div>
+          <div class="stat-pipe">|</div>
+          <div class="stat-col">
+            <div class="stat-num" id="statWellnessCalls">—</div>
+            <div class="stat-label">Total Wellness Check Calls</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert Cycles Today -->
       <div class="stat-card">
-        <div class="stat-num" id="statSchedules">—</div>
-        <div class="stat-label">Active Schedules</div>
+        <div class="stat-num stat-num-red" id="statAlertCycles">—</div>
+        <div class="stat-label">Alert Cycles Today</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" id="statToday">—</div>
-        <div class="stat-label">Calls Today</div>
-      </div>
+
+      <!-- Conditional: active wellness sessions in progress -->
       <div class="stat-card alert" id="sessionCard" style="display:none">
         <div class="stat-num" id="statSessions">—</div>
         <div class="stat-label">Active Wellness Sessions</div>
       </div>
+
+      <!-- Conditional: reminder retries in progress -->
       <div class="stat-card alert" id="reminderSessionCard" style="display:none">
         <div class="stat-num" id="statReminderSessions">—</div>
         <div class="stat-label">Reminder Retries In Progress</div>
       </div>
+
     </div>
 
     <div class="section-head">
