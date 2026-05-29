@@ -2,9 +2,12 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allClients = [];
+let clientViewMode = 'tiles'; // 'tiles' | 'rows'
 let currentClientId = null;   // client being edited in modal
 let scheduleContacts = [];    // ordered list for the schedule being edited
 let clientContactsCache = []; // client's full emergency contact list (loaded when schedule modal opens)
+let allAudioFiles = [];       // full audio file list for Audio tab (client-side search)
+let recordingContext = 'global'; // 'global' | 'client' — where to route the active recording
 
 // Recording state
 let mediaRecorder = null;
@@ -117,7 +120,7 @@ async function loadDashboard() {
       sessPanel.style.display = '';
       sessTbody.innerHTML = d.recent_sessions.map(s => {
         const ackBy = s.acknowledged_by_contact_name
-          ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${esc(s.acknowledged_by_contact_phone || '')}</small>`
+          ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${fmtPhone(s.acknowledged_by_contact_phone || '')}</small>`
           : (s.status === 'escalated' ? '—' : '');
         return `<tr>
           <td>${esc(s.client_name)}</td>
@@ -142,25 +145,68 @@ async function loadDashboard() {
 async function loadClients() {
   try {
     allClients = await api('GET', '/clients');
-    renderClients();
+    filterAndRenderClients();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-function renderClients() {
+function setClientView(mode) {
+  clientViewMode = mode;
+  document.getElementById('viewTilesBtn').classList.toggle('active', mode === 'tiles');
+  document.getElementById('viewRowsBtn').classList.toggle('active', mode === 'rows');
+  filterAndRenderClients();
+}
+
+function filterAndRenderClients() {
+  const q = (document.getElementById('clientSearch')?.value || '').trim().toLowerCase();
+  const filtered = q
+    ? allClients.filter(c =>
+        c.first_name.toLowerCase().includes(q) ||
+        c.last_name.toLowerCase().includes(q) ||
+        c.full_name.toLowerCase().includes(q) ||
+        c.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        fmtPhone(c.phone).toLowerCase().includes(q))
+    : allClients;
+  renderClients(filtered);
+}
+
+function typeChips(types) {
+  return (types || []).map(t =>
+    t === 'reminder'
+      ? '<span class="type-chip type-chip-r" title="Reminder call">R</span>'
+      : t === 'wellness'
+      ? '<span class="type-chip type-chip-w" title="Wellness check">W</span>'
+      : ''
+  ).join('');
+}
+
+function renderClients(clients) {
   const container = document.getElementById('clientsContainer');
-  if (!allClients.length) {
-    container.innerHTML = '<div class="empty">No clients yet. Click "+ Add Client" to get started.</div>';
+  if (!clients.length) {
+    container.innerHTML = allClients.length
+      ? '<div class="empty">No clients match your search.</div>'
+      : '<div class="empty">No clients yet. Click "+ Add Client" to get started.</div>';
     return;
   }
+  if (clientViewMode === 'rows') {
+    _renderClientRows(clients, container);
+  } else {
+    _renderClientTiles(clients, container);
+  }
+}
+
+function _renderClientTiles(clients, container) {
   container.innerHTML = '<div class="clients-grid">' +
-    allClients.map(c => `
+    clients.map(c => `
       <div class="client-card">
         <div class="client-card-head">
           <div>
-            <div class="client-name">${esc(c.full_name)} ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}</div>
-            <div class="client-phone">${esc(c.phone)}</div>
+            <div class="client-name">
+              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}
+              ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}
+            </div>
+            <div class="client-phone">${fmtPhone(c.phone)}</div>
           </div>
           <div class="action-btns">
             <button class="btn-edit" onclick="editClient(${c.id})">Edit</button>
@@ -175,6 +221,44 @@ function renderClients() {
   '</div>';
 }
 
+function _renderClientRows(clients, container) {
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table class="clients-table">
+        <thead><tr>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Calls</th>
+          <th>Status</th>
+          <th>Emergency Contacts</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${clients.map(c => `
+          <tr>
+            <td>
+              <strong>${esc(c.full_name)}</strong>
+              ${c.birthday ? `<br><small style="color:var(--muted)">${fmtBirthday(c.birthday)}</small>` : ''}
+            </td>
+            <td style="white-space:nowrap">${fmtPhone(c.phone)}</td>
+            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}</td>
+            <td>${c.active
+              ? '<span class="badge badge-green">Active</span>'
+              : '<span class="badge badge-gray">Inactive</span>'}</td>
+            <td style="font-size:.83rem;color:var(--muted)">
+              ${c.emergency_contacts.length
+                ? c.emergency_contacts.map(ec => esc(ec.name)).join(', ')
+                : '—'}
+            </td>
+            <td class="action-btns">
+              <button class="btn-edit btn-sm" onclick="editClient(${c.id})">Edit</button>
+              <button class="btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.full_name)}')">Delete</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function renderEcSummary(contacts) {
   if (!contacts || !contacts.length) {
     return '<div class="ec-list" style="margin-top:.5rem;font-size:.8rem;color:var(--muted)">No emergency contacts</div>';
@@ -184,7 +268,7 @@ function renderEcSummary(contacts) {
       <div class="ec-item">
         <span class="ec-priority">${ec.priority}</span>
         <span style="flex:1">${esc(ec.name)}${ec.relationship ? ' <span style="color:var(--muted)">(' + esc(ec.relationship) + ')</span>' : ''}</span>
-        <span style="color:var(--muted)">${esc(ec.phone)}</span>
+        <span style="color:var(--muted)">${fmtPhone(ec.phone)}</span>
       </div>`).join('') +
   '</div>';
 }
@@ -204,8 +288,10 @@ function showClientModal(client) {
   document.getElementById('clientZip').value = '';
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
-  document.getElementById('schedulesPanel').style.display = 'none';
-  document.getElementById('ecPanel').style.display = 'none';
+  document.getElementById('clientTabsSection').style.display = 'none';
+  // Collapse address section for a clean blank form
+  document.getElementById('addrNotesBody').style.display = 'none';
+  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = '▶';
   openOverlay('clientOverlay');
 }
 
@@ -226,9 +312,13 @@ async function editClient(id) {
   document.getElementById('clientZip').value = c.zip_code || '';
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
-  document.getElementById('schedulesPanel').style.display = '';
-  document.getElementById('ecPanel').style.display = '';
-  await Promise.all([loadClientSchedules(id), loadContactsList(id)]);
+  document.getElementById('clientTabsSection').style.display = '';
+  switchClientTab('schedules');
+  // Auto-expand address section if client has address or notes data
+  const hasAddress = c.address1 || c.address2 || c.city || c.state || c.zip_code || c.notes;
+  document.getElementById('addrNotesBody').style.display = hasAddress ? '' : 'none';
+  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = hasAddress ? '▼' : '▶';
+  await Promise.all([loadClientSchedules(id), loadContactsList(id), loadClientAudio(id)]);
   openOverlay('clientOverlay');
 }
 
@@ -257,8 +347,9 @@ async function saveClient(e) {
       currentClientId = created.id;
       document.getElementById('clientId').value = created.id;
       document.getElementById('clientModalTitle').textContent = 'Edit Client';
-      document.getElementById('ecPanel').style.display = '';
-      await loadContactsList(created.id);
+      document.getElementById('clientTabsSection').style.display = '';
+      switchClientTab('schedules');
+      await Promise.all([loadClientSchedules(created.id), loadContactsList(created.id), loadClientAudio(created.id)]);
       toast('Client created', 'success');
     }
     await loadClients();
@@ -278,6 +369,23 @@ async function deleteClient(id, name) {
   }
 }
 
+// ── Client modal helpers ──────────────────────────────────────────────────────
+
+function switchClientTab(tab) {
+  ['schedules', 'contacts', 'audio'].forEach(t => {
+    document.getElementById(`clientTab-${t}`).classList.toggle('active', t === tab);
+    document.getElementById(`clientPane-${t}`).style.display = t === tab ? '' : 'none';
+  });
+}
+
+function toggleClientSection(bodyId, btn) {
+  const body = document.getElementById(bodyId);
+  const caret = btn.querySelector('.caret-char');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  if (caret) caret.textContent = isOpen ? '▶' : '▼';
+}
+
 // ── Emergency contacts ────────────────────────────────────────────────────────
 async function loadContactsList(clientId) {
   try {
@@ -292,7 +400,7 @@ async function loadContactsList(clientId) {
         <span class="ec-priority">${c.priority}</span>
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
-          <br><span style="color:var(--muted)">${esc(c.phone)}</span>
+          <br><span style="color:var(--muted)">${fmtPhone(c.phone)}</span>
           ${c.can_text ? ' <span class="badge badge-blue" style="font-size:.7rem">Can Text</span>' : ''}
         </span>
         <div class="action-btns">
@@ -322,7 +430,7 @@ function editContact(id, name, phone, rel, priority, canText) {
   document.getElementById('contactModalTitle').textContent = 'Edit Emergency Contact';
   document.getElementById('contactId').value = id;
   document.getElementById('contactName').value = name;
-  document.getElementById('contactPhone').value = phone;
+  document.getElementById('contactPhone').value = fmtPhone(phone);
   document.getElementById('contactRelationship').value = rel;
   document.getElementById('contactPriority').value = priority;
   document.getElementById('contactCanText').checked = !!canText;
@@ -365,6 +473,128 @@ async function deleteContact(id) {
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+// ── Client audio files ────────────────────────────────────────────────────────
+
+async function loadClientAudio(clientId) {
+  try {
+    const files = await api('GET', `/uploads?client_id=${clientId}`);
+    renderClientAudio(files);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function renderClientAudio(files) {
+  const el = document.getElementById('clientAudioList');
+  if (!el) return;
+  if (!files.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.4rem 0">No audio files yet. Record or upload one above.</div>';
+    return;
+  }
+  el.innerHTML = files.map(f => `
+    <div class="audio-item">
+      <svg class="audio-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zM21 16a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <span class="audio-name">${esc(f.display_name || f.filename)}</span>
+      <div class="audio-actions">
+        <a href="/uploads/${encodeURIComponent(f.filename)}" class="btn-edit btn-sm" target="_blank">Play</a>
+        <button class="btn-danger btn-sm" onclick="deleteClientAudio('${esc(f.filename)}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+async function uploadClientAudio(fileList) {
+  for (const file of fileList) {
+    if (!file.name.toLowerCase().endsWith('.mp3')) {
+      toast(`${file.name} is not an .mp3 file`, 'error');
+      continue;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    if (currentClientId) fd.append('client_id', currentClientId);
+    try {
+      const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast(`Uploaded ${data.display_name || data.filename}`, 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+  // Reset file input
+  const input = document.getElementById('clientAudioUpload');
+  if (input) input.value = '';
+  if (currentClientId) await loadClientAudio(currentClientId);
+}
+
+async function deleteClientAudio(filename) {
+  if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/uploads/${encodeURIComponent(filename)}`);
+    toast('Audio file deleted');
+    if (currentClientId) await loadClientAudio(currentClientId);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// Client-context recording — shares mediaRecorder state, routes to client UI
+function startClientRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    toast('A recording is already in progress', 'error');
+    return;
+  }
+  recordingContext = 'client';
+  _doStartRecording();
+}
+
+function stopClientRecording() {
+  _doStopRecording();
+}
+
+async function saveClientRecording() {
+  if (!recordedBlob) { toast('Nothing recorded yet', 'error'); return; }
+  let name = document.getElementById('clientRecordName').value.trim();
+  if (!name) { toast('Please enter a filename', 'error'); return; }
+  name = name.replace(/\.[^.]+$/, '');
+
+  const fd = new FormData();
+  fd.append('audio', recordedBlob, 'recording.webm');
+  fd.append('name', name);
+  fd.append('display_name', name.replace(/_/g, ' ').replace(/-/g, ' '));
+  if (currentClientId) fd.append('client_id', currentClientId);
+
+  const btn = document.querySelector('#clientRecordPreview .btn-primary');
+  const orig = btn.textContent;
+  btn.textContent = 'Converting…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/record', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    toast(`Saved "${data.display_name || data.filename}"`, 'success');
+    discardClientRecording();
+    if (currentClientId) await loadClientAudio(currentClientId);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+function discardClientRecording() {
+  recordedBlob = null;
+  const preview = document.getElementById('clientAudioPreview');
+  if (preview) { URL.revokeObjectURL(preview.src); preview.src = ''; }
+  document.getElementById('clientRecordPreview').style.display = 'none';
+  document.getElementById('clientRecorderPanel').style.display = 'none';
+  document.getElementById('clientRecordBtn').style.display = '';
+  document.getElementById('clientRecordName').value = '';
 }
 
 // ── Schedules tab (read-only overview) ────────────────────────────────────────
@@ -447,6 +677,11 @@ async function showAddScheduleModal() {
   document.getElementById('scheduleMaxAttempts').value = 3;
   document.getElementById('scheduleInterval').value = 10;
   scheduleContacts = [];
+  // Collapse EC section for a fresh form
+  const schedEcBody = document.getElementById('schedEcBody');
+  const schedEcTog  = document.getElementById('schedEcToggle');
+  if (schedEcBody) schedEcBody.style.display = 'none';
+  if (schedEcTog)  schedEcTog.querySelector('.caret-char').textContent = '▶';
   resetAudioPreview();
   toggleScheduleFields();
   openOverlay('scheduleOverlay');
@@ -494,6 +729,13 @@ async function editClientSchedule(id) {
       relationship: sc.relationship || '',
       can_text: sc.can_text,
     }));
+
+    // Reset then conditionally expand EC collapsible
+    const schedEcBody = document.getElementById('schedEcBody');
+    const schedEcTog  = document.getElementById('schedEcToggle');
+    const hasEcContacts = scheduleContacts.length > 0 && s.call_type === 'wellness';
+    if (schedEcBody) schedEcBody.style.display = hasEcContacts ? '' : 'none';
+    if (schedEcTog)  schedEcTog.querySelector('.caret-char').textContent = hasEcContacts ? '▼' : '▶';
 
     resetAudioPreview();
     toggleScheduleFields();
@@ -581,12 +823,21 @@ async function deleteClientSchedule(id) {
 function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
-  // Audio hint differs by type
+  document.getElementById('keyPressField').style.display  = type === 'wellness' ? '' : 'none';
   const hint = document.getElementById('audioHint');
   if (hint) hint.textContent = type === 'wellness'
     ? '(optional — falls back to text-to-speech if not set)'
     : '(required — select a recorded file)';
-  if (type === 'wellness') renderScheduleEcList();
+  if (type === 'wellness') {
+    renderScheduleEcList();
+    // Auto-expand EC collapsible if contacts are already assigned
+    if (scheduleContacts.length > 0) {
+      const body = document.getElementById('schedEcBody');
+      const tog  = document.getElementById('schedEcToggle');
+      if (body) body.style.display = '';
+      if (tog)  tog.querySelector('.caret-char').textContent = '▼';
+    }
+  }
 }
 
 // ── Schedule emergency contacts ───────────────────────────────────────────────
@@ -604,6 +855,12 @@ function renderScheduleEcList() {
   const el = document.getElementById('scheduleEcList');
   if (!el) return;
 
+  // Update count badge in collapsible header
+  const countEl = document.getElementById('schedEcCount');
+  if (countEl) countEl.textContent = scheduleContacts.length
+    ? `(${scheduleContacts.length} assigned)`
+    : '(none — uses client contact list)';
+
   if (!scheduleContacts.length) {
     el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.25rem 0">None assigned — will fall back to the client\'s contact list.</div>';
   } else {
@@ -612,7 +869,7 @@ function renderScheduleEcList() {
         <span class="ec-priority">${i + 1}</span>
         <span style="flex:1">
           <strong>${esc(c.name)}</strong>${c.relationship ? ' · ' + esc(c.relationship) : ''}
-          <br><span style="color:var(--muted);font-size:.82rem">${esc(c.phone)}</span>
+          <br><span style="color:var(--muted);font-size:.82rem">${fmtPhone(c.phone)}</span>
         </span>
         <div class="action-btns">
           <button type="button" class="btn-ghost btn-sm" title="Move up"
@@ -749,39 +1006,78 @@ async function populateAudioSelect() {
     const files = await api('GET', '/uploads');
     const sel = document.getElementById('scheduleMp3');
     const cur = sel.value;
-    sel.innerHTML = '<option value="">— select audio file —</option>' +
-      files.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+
+    // Split into this client's files vs global/shared (hide other clients' files)
+    const clientFiles = files.filter(f => f.client_id === currentClientId);
+    const globalFiles = files.filter(f => f.client_id === null);
+
+    sel.innerHTML = '';
+    sel.appendChild(new Option('— select audio file —', ''));
+
+    if (clientFiles.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = 'This Client\'s Files';
+      clientFiles.forEach(f => grp.appendChild(new Option(f.display_name || f.filename, f.filename)));
+      sel.appendChild(grp);
+    }
+    if (globalFiles.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = clientFiles.length ? 'Global / Shared Files' : 'Audio Files';
+      globalFiles.forEach(f => grp.appendChild(new Option(f.display_name || f.filename, f.filename)));
+      sel.appendChild(grp);
+    }
+    if (!clientFiles.length && !globalFiles.length) {
+      sel.appendChild(new Option('No audio files available', ''));
+    }
+
     if (cur) sel.value = cur;
   } catch (_) {}
 }
 
-// ── Audio files ───────────────────────────────────────────────────────────────
+// ── Audio files tab ───────────────────────────────────────────────────────────
 async function loadAudio() {
   try {
-    const files = await api('GET', '/uploads');
-    renderAudio(files);
+    allAudioFiles = await api('GET', '/uploads');
+    filterAudio(document.getElementById('audioSearch')?.value || '');
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
+function filterAudio(q) {
+  const term = q.trim().toLowerCase();
+  const filtered = term
+    ? allAudioFiles.filter(f =>
+        (f.display_name || '').toLowerCase().includes(term) ||
+        f.filename.toLowerCase().includes(term) ||
+        (f.client_name  || '').toLowerCase().includes(term) ||
+        (f.client_phone || '').toLowerCase().includes(term))
+    : allAudioFiles;
+  renderAudio(filtered);
+}
+
 function renderAudio(files) {
   const el = document.getElementById('audioList');
   if (!files.length) {
-    el.innerHTML = '<div class="empty">No audio files uploaded yet.</div>';
+    el.innerHTML = '<div class="empty">No audio files found.</div>';
     return;
   }
-  el.innerHTML = files.map(f => `
+  el.innerHTML = files.map(f => {
+    const clientTag = f.client_name
+      ? `<span class="badge badge-blue" style="font-size:.7rem;margin-left:.4rem">${esc(f.client_name)}</span>`
+      : '<span class="badge badge-gray" style="font-size:.7rem;margin-left:.4rem">Global</span>';
+    return `
     <div class="audio-item">
       <svg class="audio-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zM21 16a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
-      <span class="audio-name">${esc(f)}</span>
+      <span class="audio-name">${esc(f.display_name || f.filename)}${clientTag}</span>
       <div class="audio-actions">
-        <a href="/uploads/${encodeURIComponent(f)}" class="btn-edit btn-sm" target="_blank">Play</a>
-        <button class="btn-danger btn-sm" onclick="deleteAudio('${esc(f)}')">Delete</button>
+        <a href="/uploads/${encodeURIComponent(f.filename)}" class="btn-edit btn-sm" target="_blank">Play</a>
+        <button class="btn-danger btn-sm" onclick="deleteAudio('${esc(f.filename)}')">Delete</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function setupUploadZone() {
@@ -808,11 +1104,12 @@ async function uploadFiles(fileList) {
     }
     const fd = new FormData();
     fd.append('file', file);
+    // No client_id — global upload from Audio tab
     try {
       const res = await fetch('/api/uploads', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast(`Uploaded ${data.filename}`, 'success');
+      toast(`Uploaded ${data.display_name || data.filename}`, 'success');
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -821,7 +1118,7 @@ async function uploadFiles(fileList) {
 }
 
 async function deleteAudio(filename) {
-  if (!confirm(`Delete "${filename}"?`)) return;
+  if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return;
   try {
     await api('DELETE', `/uploads/${encodeURIComponent(filename)}`);
     toast('File deleted');
@@ -876,6 +1173,16 @@ async function loadClientsIfNeeded() {
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtPhone(e164) {
+  if (!e164) return '';
+  const digits = String(e164).replace(/\D/g, '');
+  const local = (digits.length === 11 && digits[0] === '1') ? digits.slice(1) : digits;
+  if (local.length === 10) {
+    return `(${local.slice(0,3)}) ${local.slice(3,6)}-${local.slice(6)}`;
+  }
+  return e164; // non-US fallback — show as-is
 }
 
 function fmtBirthday(iso) {
@@ -954,8 +1261,23 @@ function typeBadge(t) {
          `<span class="badge badge-gray">${esc(t)}</span>`;
 }
 
-// ── Microphone recording ───────────────────────────────────────────────────────
-async function startRecording() {
+// ── Microphone recording (shared engine) ──────────────────────────────────────
+
+// Global-tab entry point
+function startRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    toast('A recording is already in progress', 'error');
+    return;
+  }
+  recordingContext = 'global';
+  _doStartRecording();
+}
+
+function stopRecording() {
+  _doStopRecording();
+}
+
+async function _doStartRecording() {
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -969,58 +1291,71 @@ async function startRecording() {
 
   audioChunks = [];
 
-  // Pick the best supported format
   const preferredTypes = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/ogg',
-    'audio/mp4',
+    'audio/webm;codecs=opus', 'audio/webm',
+    'audio/ogg;codecs=opus',  'audio/ogg', 'audio/mp4',
   ];
   const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
-
   mediaRecorder = new MediaRecorder(micStream, mimeType ? { mimeType } : {});
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+  const ctx = recordingContext; // capture for onstop closure
   mediaRecorder.onstop = () => {
     recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
     const url = URL.createObjectURL(recordedBlob);
-    document.getElementById('audioPreview').src = url;
-    document.getElementById('recordPreview').style.display = '';
-    micStream.getTracks().forEach(t => t.stop());
-    micStream = null;
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+
+    if (ctx === 'client') {
+      document.getElementById('clientAudioPreview').src = url;
+      document.getElementById('clientRecordPreview').style.display = '';
+      document.getElementById('clientStopBtn').style.display = 'none';
+      document.getElementById('clientRecordTimer').style.display = 'none';
+      document.getElementById('clientRecDot').style.display = 'none';
+    } else {
+      document.getElementById('audioPreview').src = url;
+      document.getElementById('recordPreview').style.display = '';
+      document.getElementById('recordBtn').style.display = '';
+      document.getElementById('stopBtn').style.display = 'none';
+      document.getElementById('recordTimer').style.display = 'none';
+      document.getElementById('recordBtn').classList.remove('recording');
+    }
   };
 
-  mediaRecorder.start(250); // collect in 250ms chunks
+  mediaRecorder.start(250);
   recordStartTime = Date.now();
 
-  // Update UI
-  document.getElementById('recordBtn').style.display = 'none';
-  document.getElementById('stopBtn').style.display = '';
-  document.getElementById('recordTimer').style.display = '';
-  document.getElementById('recordPreview').style.display = 'none';
-  document.getElementById('recordBtn').classList.add('recording');
-
+  // Which timer element to tick
+  const timerId = recordingContext === 'client' ? 'clientRecordTimer' : 'recordTimer';
+  document.getElementById(timerId).style.display = '';
   recordTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
     const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
     const s = String(elapsed % 60).padStart(2, '0');
-    document.getElementById('recordTimer').textContent = `${m}:${s}`;
+    document.getElementById(timerId).textContent = `${m}:${s}`;
   }, 500);
+
+  // Show the right controls
+  if (recordingContext === 'client') {
+    document.getElementById('clientRecorderPanel').style.display = '';
+    document.getElementById('clientRecordPreview').style.display = 'none';
+    document.getElementById('clientRecordBtn').style.display = 'none';
+    document.getElementById('clientStopBtn').style.display = '';
+    document.getElementById('clientRecDot').style.display = '';
+  } else {
+    document.getElementById('recordBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = '';
+    document.getElementById('recordPreview').style.display = 'none';
+    document.getElementById('recordBtn').classList.add('recording');
+  }
 }
 
-function stopRecording() {
+function _doStopRecording() {
   clearInterval(recordTimerInterval);
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
+    mediaRecorder.stop(); // onstop fires async and finishes the UI update
+  } else {
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   }
-  if (micStream) {
-    micStream.getTracks().forEach(t => t.stop());
-    micStream = null;
-  }
-  document.getElementById('recordBtn').style.display = '';
-  document.getElementById('stopBtn').style.display = 'none';
-  document.getElementById('recordTimer').style.display = 'none';
-  document.getElementById('recordBtn').classList.remove('recording');
 }
 
 async function saveRecording() {
@@ -1028,12 +1363,13 @@ async function saveRecording() {
 
   let name = document.getElementById('recordName').value.trim();
   if (!name) { toast('Please enter a filename before saving', 'error'); return; }
-  // Strip any extension the user typed — the server always saves as .mp3
   name = name.replace(/\.[^.]+$/, '');
 
   const fd = new FormData();
   fd.append('audio', recordedBlob, 'recording.webm');
   fd.append('name', name);
+  fd.append('display_name', name.replace(/_/g, ' ').replace(/-/g, ' '));
+  // No client_id — global recording from Audio tab
 
   const btn = document.querySelector('.record-panel .btn-primary');
   const orig = btn.textContent;
@@ -1044,7 +1380,7 @@ async function saveRecording() {
     const res = await fetch('/api/record', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    toast(`Saved "${data.filename}"`, 'success');
+    toast(`Saved "${data.display_name || data.filename}"`, 'success');
     discardRecording();
     await loadAudio();
   } catch (e) {

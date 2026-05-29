@@ -42,8 +42,29 @@ def create_app():
         _migrate_call_log_reminder_session()
         _migrate_emergency_contact_can_text()
         _migrate_wellness_session_acknowledged_by()
+        _migrate_audio_files_register(app)
 
     return app
+
+
+def _migrate_audio_files_register(app):
+    """Register any existing MP3 files in uploads/ that are not yet in the audio_files table."""
+    from carecall.models import AudioFile
+    upload_folder = app.config['UPLOAD_FOLDER']
+    if not os.path.isdir(upload_folder):
+        return
+    try:
+        existing = {af.filename for af in AudioFile.query.all()}
+        added = False
+        for fname in os.listdir(upload_folder):
+            if fname.lower().endswith('.mp3') and fname not in existing:
+                display = fname.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+                db.session.add(AudioFile(filename=fname, display_name=display, client_id=None))
+                added = True
+        if added:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def _migrate_emergency_contact_can_text():

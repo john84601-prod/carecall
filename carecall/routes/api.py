@@ -4,7 +4,7 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, CallLog, WellnessSession, ReminderSession
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession
 
 api_bp = Blueprint('api', __name__)
 
@@ -25,7 +25,7 @@ def create_client():
     client = Client(
         first_name=data['first_name'].strip(),
         last_name=data.get('last_name', '').strip(),
-        phone=data['phone'].strip(),
+        phone=_normalize_phone(data['phone']),
         address1=data.get('address1', '').strip(),
         address2=data.get('address2', '').strip(),
         city=data.get('city', '').strip(),
@@ -50,7 +50,7 @@ def update_client(client_id):
     data = request.get_json()
     client.first_name = data.get('first_name', client.first_name).strip()
     client.last_name  = data.get('last_name',  client.last_name).strip()
-    client.phone    = data.get('phone',    client.phone)
+    client.phone    = _normalize_phone(data.get('phone', client.phone))
     client.address1 = data.get('address1', client.address1).strip()
     client.address2 = data.get('address2', client.address2).strip()
     client.city     = data.get('city',     client.city).strip()
@@ -93,7 +93,7 @@ def create_contact(client_id):
     contact = EmergencyContact(
         client_id=client_id,
         name=data['name'],
-        phone=data['phone'],
+        phone=_normalize_phone(data['phone']),
         relationship=data.get('relationship', ''),
         priority=data.get('priority', 1),
         can_text=bool(data.get('can_text', False)),
@@ -108,7 +108,7 @@ def update_contact(contact_id):
     contact = db.get_or_404(EmergencyContact, contact_id)
     data = request.get_json()
     contact.name = data.get('name', contact.name)
-    contact.phone = data.get('phone', contact.phone)
+    contact.phone = _normalize_phone(data.get('phone', contact.phone))
     contact.relationship = data.get('relationship', contact.relationship)
     contact.priority = data.get('priority', contact.priority)
     if 'can_text' in data:
@@ -229,9 +229,26 @@ def delete_schedule(schedule_id):
 
 @api_bp.route('/uploads', methods=['GET'])
 def list_uploads():
-    folder = current_app.config['UPLOAD_FOLDER']
-    files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.mp3'))
-    return jsonify(files)
+    """Return all audio files. Optional ?client_id=N to filter to one client only.
+    Optional ?q=text for a search across filename, display name, client name/phone."""
+    client_id = request.args.get('client_id', type=int)
+    q = request.args.get('q', '').strip().lower()
+
+    query = AudioFile.query
+    if client_id is not None:
+        query = query.filter_by(client_id=client_id)
+
+    # Global files first, then client files; alphabetical within each group
+    files = query.order_by(AudioFile.client_id.is_(None).desc(), AudioFile.display_name).all()
+
+    if q:
+        files = [f for f in files if
+                 q in f.filename.lower() or
+                 q in (f.display_name or '').lower() or
+                 (f.client and q in f.client.full_name.lower()) or
+                 (f.client and q in (f.client.phone or '').lower())]
+
+    return jsonify([f.to_dict() for f in files])
 
 
 @api_bp.route('/uploads', methods=['POST'])
@@ -241,9 +258,25 @@ def upload_file():
     f = request.files['file']
     if not f.filename or not f.filename.lower().endswith('.mp3'):
         return jsonify({'error': 'Only .mp3 files are accepted'}), 400
+
+    client_id   = request.form.get('client_id',   type=int)
+    display_name = request.form.get('display_name', '').strip()
     filename = re.sub(r'[^\w\-.]', '_', f.filename)
     f.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
-    return jsonify({'filename': filename}), 201
+
+    if not display_name:
+        display_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+
+    # Upsert AudioFile record
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        af.client_id    = client_id
+        af.display_name = display_name
+    else:
+        af = AudioFile(filename=filename, display_name=display_name, client_id=client_id)
+        db.session.add(af)
+    db.session.commit()
+    return jsonify(af.to_dict()), 201
 
 
 @api_bp.route('/uploads/<filename>', methods=['DELETE'])
@@ -251,6 +284,10 @@ def delete_upload(filename):
     path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
     if os.path.isfile(path):
         os.remove(path)
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        db.session.delete(af)
+        db.session.commit()
     return '', 204
 
 
@@ -263,8 +300,11 @@ def save_recording():
     if 'audio' not in request.files:
         return jsonify({'error': 'No audio data received'}), 400
 
-    audio_file = request.files['audio']
-    name = request.form.get('name', '').strip()
+    audio_file   = request.files['audio']
+    name         = request.form.get('name', '').strip()
+    client_id    = request.form.get('client_id', type=int)
+    display_name = request.form.get('display_name', '').strip() or name
+
     if not name:
         return jsonify({'error': 'Filename is required'}), 400
 
@@ -306,7 +346,16 @@ def save_recording():
         except OSError:
             pass
 
-    return jsonify({'filename': filename}), 201
+    # Upsert AudioFile record
+    af = AudioFile.query.filter_by(filename=filename).first()
+    if af:
+        af.client_id    = client_id
+        af.display_name = display_name
+    else:
+        af = AudioFile(filename=filename, display_name=display_name, client_id=client_id)
+        db.session.add(af)
+    db.session.commit()
+    return jsonify(af.to_dict()), 201
 
 
 # ── Call logs & sessions ───────────────────────────────────────────────────────
@@ -377,9 +426,9 @@ def test_call():
     from carecall.twilio_client import make_call
     from carecall.tunnel import get_public_url
     data = request.get_json()
-    to = (data or {}).get('to', '').strip()
+    to = _normalize_phone((data or {}).get('to', ''))
     if not to:
-        return jsonify({'error': 'Phone number required (E.164 format, e.g. +15551234567)'}), 400
+        return jsonify({'error': 'Phone number required'}), 400
     try:
         base = get_public_url()
         sid = make_call(to, f"{base}/webhook/test", f"{base}/webhook/test")
@@ -389,6 +438,25 @@ def test_call():
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _normalize_phone(raw):
+    """Normalize a US phone number to E.164 (+1XXXXXXXXXX).
+
+    Accepts any common format: (555) 123-4567, 555-123-4567,
+    5551234567, 15551234567, +15551234567, etc.
+    Returns the normalized E.164 string, or the original value if it
+    can't be interpreted as a 10- or 11-digit US number.
+    """
+    if not raw:
+        return raw
+    digits = re.sub(r'\D', '', str(raw))
+    if len(digits) == 10:
+        return '+1' + digits
+    if len(digits) == 11 and digits[0] == '1':
+        return '+' + digits
+    # Already non-US or unrecognised — return stripped but don't mangle
+    return raw.strip()
+
 
 def _parse_date(value):
     """Parse a YYYY-MM-DD string into a date object, or return None."""
