@@ -968,3 +968,135 @@ hr { border: none; border-top: 1px solid var(--border); }
 .blackout-range { font-weight: 500; margin-right: .5rem; }
 .blackout-note  { color: var(--muted); font-size: .85rem; }
 .blackout-actions { display: flex; gap: .4rem; flex-shrink: 0; }
+
+/* ── Print preview overlay ───────────────────────────────────────────── */
+#printPreviewOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: #525659;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+#printPreviewToolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #3c3f41;
+  padding: .65rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+  flex-shrink: 0;
+}
+.print-toolbar-title {
+  color: #fff;
+  font-weight: 600;
+  font-size: .95rem;
+}
+.print-close-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.4);
+  color: #fff;
+  padding: .3rem .75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .82rem;
+  transition: background .15s;
+}
+.print-close-btn:hover { background: rgba(255,255,255,.15); }
+#printPreviewBody {
+  padding: 1.5rem;
+  display: flex;
+  justify-content: center;
+  flex: 1;
+}
+
+/* ── Print page (the white "paper") ─────────────────────────────────── */
+.print-page {
+  background: #fff;
+  width: 8.5in;
+  min-height: 11in;
+  padding: .75in;
+  box-shadow: 0 4px 28px rgba(0,0,0,.35);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #111;
+}
+.pp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 2px solid #1b2f4e;
+  padding-bottom: .35rem;
+  margin-bottom: .75rem;
+}
+.pp-logo { font-size: 1rem; font-weight: 700; color: #1b2f4e; letter-spacing: .04em; }
+.pp-print-date { font-size: .8rem; color: #666; }
+.pp-name { font-size: 1.5rem; font-weight: 700; color: #1b2f4e; margin-bottom: .2rem; }
+.pp-meta { font-size: .9rem; color: #444; margin-bottom: .2rem; }
+.pp-address { font-size: .88rem; color: #555; margin-bottom: .6rem; }
+.pp-active   { color: #27ae60; font-weight: 600; }
+.pp-inactive { color: #c0392b; font-weight: 600; }
+.pp-section-title {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #1b2f4e;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: .2rem;
+  margin: 1rem 0 .45rem;
+}
+.pp-notes {
+  font-size: .88rem;
+  color: #444;
+  white-space: pre-wrap;
+}
+.pp-empty { font-size: .88rem; color: #888; font-style: italic; margin: 0; }
+.pp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .84rem;
+}
+.pp-table th {
+  text-align: left;
+  border-bottom: 1.5px solid #1b2f4e;
+  padding: .25rem .4rem;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #1b2f4e;
+}
+.pp-table td {
+  padding: .3rem .4rem;
+  border-bottom: 1px solid #e8e8e8;
+  vertical-align: top;
+}
+.pp-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── @media print — hide everything except the paper ────────────────── */
+@media print {
+  body > * { display: none !important; }
+  #printPreviewOverlay {
+    display: flex !important;
+    position: static !important;
+    background: none !important;
+    overflow: visible !important;
+    flex-direction: column !important;
+  }
+  #printPreviewToolbar { display: none !important; }
+  #printPreviewBody {
+    padding: 0 !important;
+    justify-content: flex-start !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+  }
+}

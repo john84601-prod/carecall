@@ -414,6 +414,7 @@ function showClientModal(client) {
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
   document.getElementById('clientTabsSection').style.display = 'none';
+  document.getElementById('clientPrintBtn').style.display = 'none';
   cancelBlackoutEdit();
   _blackoutsCache = [];
   // Collapse address section for a clean blank form
@@ -440,6 +441,7 @@ async function editClient(id) {
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
   document.getElementById('clientTabsSection').style.display = '';
+  document.getElementById('clientPrintBtn').style.display = '';
   switchClientTab('schedules');
   // Auto-expand address section if client has address or notes data
   const hasAddress = c.address1 || c.address2 || c.city || c.state || c.zip_code || c.notes;
@@ -475,6 +477,7 @@ async function saveClient(e) {
       document.getElementById('clientId').value = created.id;
       document.getElementById('clientModalTitle').textContent = 'Edit Client';
       document.getElementById('clientTabsSection').style.display = '';
+      document.getElementById('clientPrintBtn').style.display = '';
       switchClientTab('schedules');
       await Promise.all([loadClientSchedules(created.id), loadContactsList(created.id), loadClientAudio(created.id)]);
       toast('Client created', 'success');
@@ -1508,6 +1511,166 @@ function fmtScheduleTime(t) {
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12  = h % 12 || 12;
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+}
+
+// ── Print preview & PDF download ──────────────────────────────────────────────
+let _printClientData = null;
+
+async function openPrintPreview() {
+  if (!currentClientId) return;
+  try {
+    const [client, schedules, contacts] = await Promise.all([
+      api('GET', `/clients/${currentClientId}`),
+      api('GET', `/clients/${currentClientId}/schedules`),
+      api('GET', `/clients/${currentClientId}/contacts`),
+    ]);
+    _printClientData = client;
+    document.getElementById('printPageContent').innerHTML = _buildPrintHtml(client, schedules, contacts);
+    document.getElementById('printPreviewOverlay').style.display = '';
+  } catch(e) { toast('Could not load print preview: ' + e.message, 'error'); }
+}
+
+function closePrintPreview() {
+  document.getElementById('printPreviewOverlay').style.display = 'none';
+}
+
+function printClientPage() {
+  window.print();
+}
+
+async function downloadClientPdf() {
+  const btn = document.getElementById('pdfDownloadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    if (!window.html2canvas)
+      await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if (!window.jspdf)
+      await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+
+    const el = document.getElementById('printPageContent');
+    const canvas = await html2canvas(el, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
+
+    // Slice the canvas into letter-page (8.5×11in) segments
+    const PW = canvas.width;                              // canvas pixels wide
+    const PH = Math.round(PW * (11 / 8.5));              // pixels per page tall
+    let yOff = 0, page = 0;
+
+    while (yOff < canvas.height) {
+      if (page > 0) pdf.addPage();
+      const sliceH    = Math.min(PH, canvas.height - yOff);
+      const pageC     = document.createElement('canvas');
+      pageC.width     = PW;
+      pageC.height    = PH;
+      const ctx = pageC.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, PW, PH);
+      ctx.drawImage(canvas, 0, yOff, PW, sliceH, 0, 0, PW, sliceH);
+      pdf.addImage(pageC.toDataURL('image/jpeg', 0.93), 'JPEG', 0, 0, 8.5, 11);
+      yOff += PH;
+      page++;
+    }
+
+    const name = (_printClientData?.full_name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+    pdf.save(`${name}_CareCall.pdf`);
+  } catch(e) {
+    toast('PDF generation failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⬇️ Download PDF';
+  }
+}
+
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function _buildPrintHtml(client, schedules, contacts) {
+  const addr = [
+    client.address1, client.address2,
+    [client.city, client.state].filter(Boolean).join(', '),
+    client.zip_code,
+  ].filter(Boolean).join(', ');
+
+  const dob = client.birthday ? _fmtDateMDY(client.birthday) : null;
+
+  function _fmtDays(dow) {
+    if (!dow) return 'Every day';
+    const labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const days = dow.split(',').map(Number);
+    if (days.length === 7) return 'Every day';
+    if (days.join(',') === '0,1,2,3,4') return 'Weekdays';
+    if (days.join(',') === '5,6') return 'Weekends';
+    return days.map(d => labels[d]).join(', ');
+  }
+
+  const printDate = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+
+  const schedRows = schedules.map(s => `
+    <tr>
+      <td>${fmtScheduleTime(s.time_of_day)}</td>
+      <td>${esc(s.name || '—')}</td>
+      <td>${s.call_type.charAt(0).toUpperCase() + s.call_type.slice(1)}</td>
+      <td>${_fmtDays(s.days_of_week)}</td>
+      <td style="text-align:center">${s.max_attempts}</td>
+      <td style="text-align:center">${s.attempt_interval_minutes} min</td>
+      <td>${s.active ? 'Active' : 'Inactive'}</td>
+    </tr>`).join('');
+
+  const contactRows = contacts.map(c => `
+    <tr>
+      <td style="text-align:center">${c.priority}</td>
+      <td>${esc(c.name)}</td>
+      <td>${fmtPhone(c.phone)}</td>
+      <td>${esc(c.relationship || '—')}</td>
+      <td style="text-align:center">${c.can_text ? 'Yes' : '—'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="pp-header">
+      <div class="pp-logo">CareCall</div>
+      <div class="pp-print-date">Printed ${printDate}</div>
+    </div>
+
+    <div class="pp-name">${esc(client.full_name)}</div>
+    <div class="pp-meta">
+      ${fmtPhone(client.phone)}${dob ? ` &bull; DOB: ${dob}` : ''}
+      &bull; <span class="${client.active ? 'pp-active' : 'pp-inactive'}">${client.active ? 'Active' : 'Inactive'}</span>
+    </div>
+    ${addr ? `<div class="pp-address">${esc(addr)}</div>` : ''}
+
+    ${client.notes ? `
+      <div class="pp-section-title">Notes</div>
+      <div class="pp-notes">${esc(client.notes)}</div>` : ''}
+
+    <div class="pp-section-title">Call Schedules</div>
+    ${schedules.length ? `
+      <table class="pp-table">
+        <thead><tr>
+          <th>Time</th><th>Name</th><th>Type</th><th>Days</th>
+          <th>Max Attempts</th><th>Retry Interval</th><th>Status</th>
+        </tr></thead>
+        <tbody>${schedRows}</tbody>
+      </table>` : '<p class="pp-empty">No call schedules configured.</p>'}
+
+    <div class="pp-section-title">Emergency Contacts</div>
+    ${contacts.length ? `
+      <table class="pp-table">
+        <thead><tr>
+          <th>#</th><th>Name</th><th>Phone</th><th>Relationship</th><th>Can Text</th>
+        </tr></thead>
+        <tbody>${contactRows}</tbody>
+      </table>` : '<p class="pp-empty">No emergency contacts configured.</p>'}
+  `;
 }
 
 // ── Microphone recording (shared engine) ──────────────────────────────────────

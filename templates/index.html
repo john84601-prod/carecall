@@ -329,6 +329,7 @@
   <div class="modal modal-xl" onclick="event.stopPropagation()">
     <div class="modal-head">
       <h3 id="clientModalTitle">Add Client</h3>
+      <button id="clientPrintBtn" class="btn-ghost btn-sm" style="display:none" onclick="openPrintPreview()">🖨️ Print</button>
       <button class="close-btn" onclick="closeOverlay('clientOverlay')">✕</button>
     </div>
 
@@ -683,6 +684,21 @@
 </div>
 
 <div id="toast" class="toast"></div>
+
+<!-- ── Print Preview Overlay ─────────────────────────────────────────── -->
+<div id="printPreviewOverlay" style="display:none">
+  <div id="printPreviewToolbar">
+    <span class="print-toolbar-title">Print Preview</span>
+    <div style="display:flex;gap:.6rem;align-items:center">
+      <button class="btn-primary btn-sm" onclick="printClientPage()">🖨️ Print</button>
+      <button class="btn-primary btn-sm" id="pdfDownloadBtn" onclick="downloadClientPdf()">⬇️ Download PDF</button>
+      <button class="print-close-btn" onclick="closePrintPreview()">✕ Close</button>
+    </div>
+  </div>
+  <div id="printPreviewBody">
+    <div id="printPageContent" class="print-page"></div>
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>
