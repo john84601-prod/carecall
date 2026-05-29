@@ -752,3 +752,98 @@ hr { border: none; border-top: 1px solid var(--border); }
 }
 .clients-table tbody tr:hover { background: #f8fafc; }
 .clients-table .action-btns  { white-space: nowrap; }
+
+/* ── Client filter bar ───────────────────────────────────────────────── */
+.client-filters {
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem 1.25rem;
+  margin-bottom: 1rem;
+  padding: .7rem 1rem;
+}
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.filter-group-label {
+  color: var(--muted);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.filter-group input[type=search] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: .875rem;
+  padding: .38rem .65rem;
+  transition: border-color .15s;
+  width: 175px;
+}
+.filter-group input[type=search]:focus {
+  border-color: var(--teal);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(46,134,171,.12);
+}
+.filter-divider {
+  background: var(--border);
+  flex-shrink: 0;
+  height: 32px;
+  width: 1px;
+}
+.filter-checks {
+  align-items: center;
+  display: flex;
+  gap: .9rem;
+}
+.filter-check {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: .875rem;
+  gap: .4rem;
+  user-select: none;
+}
+.filter-check input[type=checkbox] { cursor: pointer; }
+.filter-status-group {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.filter-seg {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  overflow: hidden;
+}
+.filter-seg label {
+  cursor: pointer;
+  display: flex;
+}
+.filter-seg label:not(:last-child) { border-right: 1px solid var(--border); }
+.filter-seg input[type=radio] { display: none; }
+.filter-seg span {
+  color: var(--muted);
+  display: block;
+  font-size: .82rem;
+  font-weight: 500;
+  padding: .35rem .8rem;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.filter-seg label:has(input:checked) span {
+  background: var(--teal);
+  color: #fff;
+}
+.filter-seg label:not(:has(input:checked)):hover span {
+  background: var(--bg);
+  color: var(--text);
+}

@@ -181,15 +181,36 @@ function setClientView(mode) {
 }
 
 function filterAndRenderClients() {
-  const q = (document.getElementById('clientSearch')?.value || '').trim().toLowerCase();
-  const filtered = q
-    ? allClients.filter(c =>
-        c.first_name.toLowerCase().includes(q) ||
-        c.last_name.toLowerCase().includes(q) ||
-        c.full_name.toLowerCase().includes(q) ||
-        c.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
-        fmtPhone(c.phone).toLowerCase().includes(q))
-    : allClients;
+  const name   = (document.getElementById('filterName')?.value  || '').trim().toLowerCase();
+  const phone  = (document.getElementById('filterPhone')?.value || '').trim().replace(/\D/g, '');
+  const wantR  = document.getElementById('filterReminder')?.checked;
+  const wantW  = document.getElementById('filterWellness')?.checked;
+  const status = document.querySelector('input[name="clientStatus"]:checked')?.value || 'active';
+
+  const filtered = allClients.filter(c => {
+    // Name filter
+    if (name && !c.first_name.toLowerCase().includes(name) &&
+                !c.last_name.toLowerCase().includes(name) &&
+                !c.full_name.toLowerCase().includes(name)) return false;
+
+    // Phone filter
+    if (phone) {
+      const digits = String(c.phone || '').replace(/\D/g, '');
+      if (!digits.includes(phone)) return false;
+    }
+
+    // Schedule-type filters (AND: both must match when both checked)
+    const types = c.schedule_types || [];
+    if (wantR && !types.includes('reminder')) return false;
+    if (wantW && !types.includes('wellness')) return false;
+
+    // Status filter
+    if (status === 'active'   && !c.active) return false;
+    if (status === 'inactive' &&  c.active) return false;
+
+    return true;
+  });
+
   renderClients(filtered);
 }
 
@@ -207,7 +228,7 @@ function renderClients(clients) {
   const container = document.getElementById('clientsContainer');
   if (!clients.length) {
     container.innerHTML = allClients.length
-      ? '<div class="empty">No clients match your search.</div>'
+      ? '<div class="empty">No clients match the current filters.</div>'
       : '<div class="empty">No clients yet. Click "+ Add Client" to get started.</div>';
     return;
   }

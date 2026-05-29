@@ -102,8 +102,6 @@
     <div class="section-head">
       <h2>Clients</h2>
       <div class="row gap-sm" style="align-items:center">
-        <input type="search" id="clientSearch" placeholder="Search by name or phone…"
-          style="width:230px" oninput="filterAndRenderClients()">
         <div class="view-toggle">
           <button id="viewTilesBtn" class="view-btn active" onclick="setClientView('tiles')" title="Tile view">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -124,6 +122,39 @@
         <button class="btn-primary" onclick="showClientModal()">+ Add Client</button>
       </div>
     </div>
+
+    <!-- Filter bar -->
+    <div class="client-filters">
+      <div class="filter-group">
+        <div class="filter-group-label">Name</div>
+        <input type="search" id="filterName" placeholder="First or last name…" oninput="filterAndRenderClients()">
+      </div>
+      <div class="filter-group">
+        <div class="filter-group-label">Phone</div>
+        <input type="search" id="filterPhone" placeholder="Phone number…" oninput="filterAndRenderClients()">
+      </div>
+      <div class="filter-divider"></div>
+      <div class="filter-checks">
+        <label class="filter-check">
+          <input type="checkbox" id="filterReminder" onchange="filterAndRenderClients()">
+          <span class="type-chip type-chip-r">R</span> Reminder
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" id="filterWellness" onchange="filterAndRenderClients()">
+          <span class="type-chip type-chip-w">W</span> Wellness
+        </label>
+      </div>
+      <div class="filter-divider"></div>
+      <div class="filter-status-group">
+        <div class="filter-group-label">Status</div>
+        <div class="filter-seg">
+          <label><input type="radio" name="clientStatus" value="active" checked onchange="filterAndRenderClients()"><span>Active</span></label>
+          <label><input type="radio" name="clientStatus" value="inactive" onchange="filterAndRenderClients()"><span>Inactive</span></label>
+          <label><input type="radio" name="clientStatus" value="all" onchange="filterAndRenderClients()"><span>Both</span></label>
+        </div>
+      </div>
+    </div>
+
     <div id="clientsContainer"></div>
   </section>
 
