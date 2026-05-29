@@ -37,6 +37,7 @@ def create_app():
     with app.app_context():
         db.create_all()
         _migrate_client_name_split()
+        _migrate_client_name_nullable()
         _migrate_client_address_fields()
         _migrate_client_birthday()
         _migrate_call_log_reminder_session()
@@ -135,6 +136,30 @@ def _migrate_client_address_fields():
         for col, definition in new_cols.items():
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE clients ADD COLUMN {col} {definition}"))
+        conn.commit()
+
+
+def _migrate_client_name_nullable():
+    """Make the legacy 'name' column nullable so INSERTs that omit it don't fail.
+
+    Databases restored from before the first_name/last_name split may still have
+    'name VARCHAR(100) NOT NULL'. SQLite can't ALTER COLUMN constraints directly,
+    so we patch the stored schema via writable_schema.
+    """
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    cols = {c['name']: c for c in inspect(engine).get_columns('clients')}
+    if 'name' not in cols or cols['name']['nullable']:
+        return  # column gone or already nullable — nothing to do
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA writable_schema = ON"))
+        conn.execute(text(
+            "UPDATE sqlite_master "
+            "SET sql = REPLACE(sql, 'name VARCHAR(100) NOT NULL', 'name VARCHAR(100)') "
+            "WHERE type = 'table' AND name = 'clients'"
+        ))
+        conn.execute(text("PRAGMA writable_schema = OFF"))
+        conn.execute(text("VACUUM"))
         conn.commit()
 
 
