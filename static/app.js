@@ -152,7 +152,7 @@ async function loadDashboard() {
 
     const tbody = document.getElementById('logTable');
     if (!d.recent_logs.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">No calls yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No calls today.</td></tr>';
     } else {
       tbody.innerHTML = d.recent_logs.map(l => `
         <tr>
@@ -164,11 +164,9 @@ async function loadDashboard() {
         </tr>`).join('');
     }
 
-    // Wellness sessions panel
-    const sessPanel = document.getElementById('wellnessSessionsPanel');
+    // Wellness sessions panel (always visible, filtered to today)
     const sessTbody = document.getElementById('wellnessSessionsTable');
     if (d.recent_sessions && d.recent_sessions.length) {
-      sessPanel.style.display = '';
       const activeStatuses = new Set(['pending', 'calling', 'escalating']);
       sessTbody.innerHTML = d.recent_sessions.map(s => {
         const ackBy = s.acknowledged_by_contact_name
@@ -188,7 +186,7 @@ async function loadDashboard() {
         </tr>`;
       }).join('');
     } else {
-      sessPanel.style.display = 'none';
+      sessTbody.innerHTML = '<tr><td colspan="7" class="empty">No wellness sessions today.</td></tr>';
     }
 
     // Active reminder sessions panel

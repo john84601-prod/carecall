@@ -409,9 +409,16 @@ def get_reminder_sessions():
 
 @api_bp.route('/dashboard', methods=['GET'])
 def dashboard():
-    from datetime import datetime, timezone
+    from datetime import datetime, date as _date
     from sqlalchemy import func, distinct as sa_distinct
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Use local calendar day (not UTC) so "today" matches the server's clock.
+    # Convert local midnight to the equivalent naive-UTC value for DB comparison.
+    _local_now  = datetime.now()
+    _utc_now    = datetime.utcnow()
+    _utc_offset = _utc_now - _local_now          # timedelta: how far ahead UTC is
+    local_midnight = datetime.combine(_date.today(), datetime.min.time())
+    today_start = local_midnight + _utc_offset   # local midnight expressed as UTC
 
     # Core counts
     active_clients   = Client.query.filter_by(active=True).count()
@@ -455,8 +462,12 @@ def dashboard():
         ReminderSession.status.in_(['pending', 'calling'])
     ).order_by(ReminderSession.started_at.desc()).all()
 
-    recent_logs     = CallLog.query.order_by(CallLog.timestamp.desc()).limit(20).all()
-    recent_sessions = WellnessSession.query.order_by(WellnessSession.started_at.desc()).limit(10).all()
+    recent_logs     = CallLog.query.filter(
+        CallLog.timestamp >= today_start
+    ).order_by(CallLog.timestamp.desc()).all()
+    recent_sessions = WellnessSession.query.filter(
+        WellnessSession.started_at >= today_start
+    ).order_by(WellnessSession.started_at.desc()).all()
 
     return jsonify({
         'active_clients':   active_clients,
