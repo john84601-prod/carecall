@@ -1347,16 +1347,17 @@ function statusBadge(s) {
 
 function wellnessSessionBadge(s) {
   const map = {
-    pending:      ['badge-orange', 'Pending'],
-    calling:      ['badge-blue',   'Calling'],
-    acknowledged: ['badge-green',  'Acknowledged'],
-    escalating:   ['badge-orange', 'Escalating'],
-    escalated:    ['badge-green',  'Escalated'],
-    failed:       ['badge-red',    'Failed'],
-    cancelled:    ['badge-gray',   'Cancelled'],
+    pending:      ['badge-orange', 'Pending',      'Waiting to place the next call attempt.'],
+    calling:      ['badge-blue',   'Calling',      'A call is actively in progress right now.'],
+    acknowledged: ['badge-green',  'Acknowledged', 'The client pressed the correct key — confirmed okay.'],
+    escalating:   ['badge-orange', 'Escalating',   'Max attempts reached; now calling emergency contacts in sequence.'],
+    escalated:    ['badge-green',  'Escalated',    'An emergency contact confirmed they will follow up.'],
+    failed:       ['badge-red',    'Failed',       'All client attempts and emergency contacts exhausted with no response.'],
+    cancelled:    ['badge-gray',   'Cancelled',    'Manually stopped via the Stop button on the dashboard.'],
   };
-  const [cls, label] = map[s] || ['badge-gray', s];
-  return `<span class="badge ${cls}">${label}</span>`;
+  const [cls, label, tip] = map[s] || ['badge-gray', s, ''];
+  const tipAttr = tip ? ` data-tooltip="${tip}"` : '';
+  return `<span class="badge ${cls}"${tipAttr}>${label}</span>`;
 }
 
 async function cancelWellnessSession(id) {
@@ -1382,10 +1383,14 @@ async function cancelReminderSession(id) {
 }
 
 function typeBadge(t) {
-  return t === 'reminder'  ? '<span class="badge badge-blue">Reminder</span>' :
-         t === 'wellness'  ? '<span class="badge badge-green">Wellness</span>' :
-         t === 'emergency' ? '<span class="badge badge-red">Emergency</span>' :
-         `<span class="badge badge-gray">${esc(t)}</span>`;
+  const map = {
+    reminder:  ['badge-blue',  'Reminder',  'A scheduled call that plays an audio message. No response required — just delivers the reminder.'],
+    wellness:  ['badge-green', 'Wellness',  'A scheduled wellness check. The client must press a key to confirm they are okay.'],
+    emergency: ['badge-red',   'Emergency', 'A call to an emergency contact after the client failed to respond to all wellness check attempts.'],
+  };
+  const [cls, label, tip] = map[t] || ['badge-gray', t, ''];
+  const tipAttr = tip ? ` data-tooltip="${tip}"` : '';
+  return `<span class="badge ${cls}"${tipAttr}>${label}</span>`;
 }
 
 // ── Microphone recording (shared engine) ──────────────────────────────────────
