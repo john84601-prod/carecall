@@ -23,8 +23,49 @@ let currentContactId = null;  // contact being edited
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   setupUploadZone();
+  _initTooltips();
   loadDashboard();
 });
+
+// ── Tooltip engine ────────────────────────────────────────────────────────────
+function _initTooltips() {
+  const tip = document.createElement('div');
+  tip.className = 'tooltip-popup';
+  document.body.appendChild(tip);
+
+  let activeTipEl = null;
+
+  document.addEventListener('mousemove', e => {
+    const el = e.target.closest('[data-tooltip]');
+    if (!el) {
+      tip.style.opacity = '0';
+      activeTipEl = null;
+      return;
+    }
+    // Update text only when the target changes
+    if (el !== activeTipEl) {
+      tip.textContent = el.dataset.tooltip;
+      activeTipEl = el;
+    }
+    tip.style.opacity = '1';
+
+    // Position above the element, clamped to viewport, flip below if no room
+    const r  = el.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = r.left + r.width / 2 - tw / 2;
+    let top  = r.top  - th - 8;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    if (top < 8) top = r.bottom + 8;
+    tip.style.left = left + 'px';
+    tip.style.top  = top  + 'px';
+  });
+
+  document.addEventListener('mouseleave', () => {
+    tip.style.opacity = '0';
+    activeTipEl = null;
+  }, true); // capture phase so it fires even when mouse leaves the window
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function setupTabs() {
@@ -1269,25 +1310,39 @@ function fmtDays(str) {
 
 function statusBadge(s) {
   const classes = {
-    initiated:      'badge-blue',
-    answered:       'badge-blue',
-    reached_human:  'badge-green',
-    left_voicemail: 'badge-blue',
-    acknowledged:   'badge-green',
-    escalated:      'badge-green',
-    'no-answer':    'badge-orange',
-    busy:           'badge-orange',
-    failed:         'badge-red',
+    initiated:        'badge-blue',
+    answered:         'badge-blue',
+    reached_human:    'badge-green',
+    left_voicemail:   'badge-blue',
+    acknowledged:     'badge-green',
+    escalated:        'badge-green',
+    'no-answer':      'badge-orange',
+    busy:             'badge-orange',
+    failed:           'badge-red',
     'wrong-keypress': 'badge-red',
-    completed:      'badge-gray',
+    completed:        'badge-gray',
   };
   const labels = {
-    reached_human:  'Reached Human',
-    left_voicemail: 'Left Voicemail',
-    'no-answer':    'No Answer',
+    reached_human:    'Reached Human',
+    left_voicemail:   'Left Voicemail',
+    'no-answer':      'No Answer',
     'wrong-keypress': 'Wrong Key',
   };
-  return `<span class="badge ${classes[s] || 'badge-gray'}">${esc(labels[s] || s)}</span>`;
+  const tips = {
+    initiated:        'The call was placed but has not connected yet.',
+    answered:         'A human picked up the phone.',
+    reached_human:    'A human answered and heard the reminder message.',
+    left_voicemail:   'Voicemail detected; the message was left after the beep.',
+    acknowledged:     'The correct key was pressed confirming the person is okay.',
+    escalated:        'An emergency contact confirmed they will follow up.',
+    'no-answer':      'The call rang but nobody picked up.',
+    busy:             'The line was busy.',
+    failed:           'The call could not connect (bad number or carrier error).',
+    'wrong-keypress': 'Someone answered but pressed the wrong key.',
+    completed:        'The call finished normally.',
+  };
+  const tip = tips[s] ? ` data-tooltip="${tips[s]}"` : '';
+  return `<span class="badge ${classes[s] || 'badge-gray'}"${tip}>${esc(labels[s] || s)}</span>`;
 }
 
 function wellnessSessionBadge(s) {
