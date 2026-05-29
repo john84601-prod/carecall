@@ -103,7 +103,7 @@
       <h2>Clients</h2>
       <div class="row gap-sm" style="align-items:center">
         <div class="view-toggle">
-          <button id="viewTilesBtn" class="view-btn active" onclick="setClientView('tiles')" title="Tile view">
+          <button id="viewTilesBtn" class="view-btn" onclick="setClientView('tiles')" title="Tile view">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <rect x="3" y="3" width="8" height="8" rx="1.5"/>
               <rect x="13" y="3" width="8" height="8" rx="1.5"/>
@@ -111,7 +111,7 @@
               <rect x="13" y="13" width="8" height="8" rx="1.5"/>
             </svg>
           </button>
-          <button id="viewRowsBtn" class="view-btn" onclick="setClientView('rows')" title="List view">
+          <button id="viewRowsBtn" class="view-btn active" onclick="setClientView('rows')" title="List view">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="3" y1="6"  x2="21" y2="6"/>
               <line x1="3" y1="12" x2="21" y2="12"/>
@@ -152,6 +152,11 @@
           <label><input type="radio" name="clientStatus" value="inactive" onchange="filterAndRenderClients()"><span>Inactive</span></label>
           <label><input type="radio" name="clientStatus" value="all" onchange="filterAndRenderClients()"><span>Both</span></label>
         </div>
+      </div>
+      <div class="filter-divider"></div>
+      <div class="filter-status-group">
+        <div class="filter-group-label">Sort</div>
+        <button type="button" id="sortToggleBtn" class="filter-sort-btn" onclick="toggleClientSort()">First, Last</button>
       </div>
     </div>
 

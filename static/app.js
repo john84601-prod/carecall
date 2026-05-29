@@ -2,7 +2,8 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allClients = [];
-let clientViewMode = 'tiles'; // 'tiles' | 'rows'
+let clientViewMode = 'rows';  // 'tiles' | 'rows'
+let clientSortOrder = 'first'; // 'first' = first→last name, 'last' = last→first name
 let currentClientId = null;   // client being edited in modal
 let scheduleContacts = [];    // array of emergency_contact_id values active for the schedule being edited
 let clientContactsCache = []; // client's full emergency contact list (loaded when schedule modal opens)
@@ -180,6 +181,13 @@ function setClientView(mode) {
   filterAndRenderClients();
 }
 
+function toggleClientSort() {
+  clientSortOrder = clientSortOrder === 'first' ? 'last' : 'first';
+  const btn = document.getElementById('sortToggleBtn');
+  if (btn) btn.textContent = clientSortOrder === 'first' ? 'First, Last' : 'Last, First';
+  filterAndRenderClients();
+}
+
 function filterAndRenderClients() {
   const name   = (document.getElementById('filterName')?.value  || '').trim().toLowerCase();
   const phone  = (document.getElementById('filterPhone')?.value || '').trim().replace(/\D/g, '');
@@ -210,6 +218,12 @@ function filterAndRenderClients() {
 
     return true;
   });
+
+  // Sort
+  filtered.sort((a, b) => clientSortOrder === 'first'
+    ? a.first_name.localeCompare(b.first_name) || a.last_name.localeCompare(b.last_name)
+    : a.last_name.localeCompare(b.last_name)   || a.first_name.localeCompare(b.first_name)
+  );
 
   renderClients(filtered);
 }

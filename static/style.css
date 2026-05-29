@@ -847,3 +847,16 @@ hr { border: none; border-top: 1px solid var(--border); }
   background: var(--bg);
   color: var(--text);
 }
+.filter-sort-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 500;
+  padding: .35rem .8rem;
+  transition: background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.filter-sort-btn:hover { background: #e2e6ec; border-color: var(--muted); }
