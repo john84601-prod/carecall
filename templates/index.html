@@ -36,6 +36,7 @@
 
       <!-- Clients + Schedules combined -->
       <div class="stat-card">
+        <div class="stat-card-title">Client Statistics</div>
         <div class="stat-multi">
           <div class="stat-col">
             <div class="stat-num" id="statClients">—</div>
@@ -111,22 +112,9 @@
 
     </div>
 
-    <div class="section-head">
-      <h2>Recent Calls</h2>
-      <button class="btn-ghost" onclick="loadDashboard()">Refresh</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Time</th><th>Client</th><th>Type</th><th>Attempt</th><th>Status</th>
-        </tr></thead>
-        <tbody id="logTable"></tbody>
-      </table>
-    </div>
-
-    <div id="wellnessSessionsPanel" style="display:none;margin-top:2rem">
+    <div id="wellnessSessionsPanel" style="display:none">
       <div class="section-head">
-        <h2>Recent Wellness Sessions</h2>
+        <h2>Wellness Sessions</h2>
       </div>
       <div class="table-wrap">
         <table>
@@ -148,6 +136,21 @@
             <th>Client</th><th>Schedule</th><th>Attempts</th><th>Started</th><th></th>
           </tr></thead>
           <tbody id="reminderSessionsTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:2rem">
+      <div class="section-head">
+        <h2>Recent Calls</h2>
+        <button class="btn-ghost" onclick="loadDashboard()">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>Client</th><th>Type</th><th>Attempt</th><th>Status</th>
+          </tr></thead>
+          <tbody id="logTable"></tbody>
         </table>
       </div>
     </div>
