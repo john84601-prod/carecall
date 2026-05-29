@@ -25,6 +25,11 @@ def _voice():
     return os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural')
 
 
+def _required_keypress():
+    """Key the client must press to confirm wellness. Override with REQUIRED_KEYPRESS in .env."""
+    return os.getenv('REQUIRED_KEYPRESS', '1')
+
+
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 @webhooks_bp.route('/reminder-answer', methods=['POST'])
@@ -86,7 +91,7 @@ def wellness_answer():
     if session:
         client = session.client
         schedule = session.schedule
-        key = schedule.required_keypress
+        key = _required_keypress()
 
         if is_machine:
             # Voicemail — play audio after the beep (DetectMessageEnd already waited for it),
@@ -140,7 +145,7 @@ def wellness_keypress():
 
     if session and log:
         log.keypress_received = digits
-        if digits == session.schedule.required_keypress:
+        if digits == _required_keypress():
             log.status = 'acknowledged'
             session.status = 'acknowledged'
             session.resolved_at = datetime.utcnow()
@@ -167,34 +172,50 @@ def emergency_answer():
     log = db.session.get(CallLog, log_id) if log_id else None
     contact = db.session.get(EmergencyContact, contact_id) if contact_id else None
 
+    # AnsweredBy: human | machine_start | machine_end_beep | machine_end_silence | …
+    answered_by = request.form.get('AnsweredBy', 'human')
+    is_machine = answered_by.startswith('machine')
+
     if log:
-        log.status = 'answered'
+        log.status = 'left_voicemail' if is_machine else 'answered'
         db.session.commit()
 
     vr = VoiceResponse()
 
     if session and contact:
         client = session.client
-        key = session.schedule.required_keypress
+        key = _required_keypress()
 
-        gather = Gather(
-            num_digits=1,
-            action=(
-                f"{_public_url()}/webhook/emergency-keypress"
-                f"?session_id={session_id}&contact_id={contact_id}&log_id={log_id}"
-            ),
-            method='POST',
-            timeout=20,
-        )
-        gather.say(
-            f"This is an urgent wellness notification. {client.full_name} has not responded to "
-            f"{session.current_attempt} wellness check calls. "
-            f"As their emergency contact, please press {key} to confirm "
-            "you will follow up with them immediately.",
-            voice=_voice(),
-        )
-        vr.append(gather)
-        vr.say("We did not receive your acknowledgment. Goodbye.", voice=_voice())
+        if is_machine:
+            # Voicemail — DetectMessageEnd already waited for the beep.
+            # Speak clearly without a Gather (voicemail can't press keys).
+            vr.say(
+                f"Urgent message for {contact.name}. "
+                f"{client.full_name} has not responded to "
+                f"{session.current_attempt} wellness check calls. "
+                "Please check on them as soon as possible.",
+                voice=_voice(),
+            )
+        else:
+            # Human answered — gather keypress confirmation.
+            gather = Gather(
+                num_digits=1,
+                action=(
+                    f"{_public_url()}/webhook/emergency-keypress"
+                    f"?session_id={session_id}&contact_id={contact_id}&log_id={log_id}"
+                ),
+                method='POST',
+                timeout=20,
+            )
+            gather.say(
+                f"This is an urgent wellness notification. {client.full_name} has not responded to "
+                f"{session.current_attempt} wellness check calls. "
+                f"As their emergency contact, please press {key} to confirm "
+                "you will follow up with them immediately.",
+                voice=_voice(),
+            )
+            vr.append(gather)
+            vr.say("We did not receive your acknowledgment. Goodbye.", voice=_voice())
     else:
         vr.say("Emergency wellness notification. Session not found. Goodbye.", voice=_voice())
 
@@ -216,7 +237,7 @@ def emergency_keypress():
 
     if session and log and contact:
         log.keypress_received = digits
-        if digits == session.schedule.required_keypress:
+        if digits == _required_keypress():
             log.status = 'acknowledged'
             session.emergency_acknowledged = True
             session.acknowledged_by_contact_id = contact.id
@@ -269,13 +290,13 @@ def call_status():
 
     elif call_type == 'wellness' and session_id:
         session = db.session.get(WellnessSession, session_id)
-        if session and session.status not in ('acknowledged', 'escalating', 'escalated', 'failed'):
+        if session and session.status not in ('acknowledged', 'escalating', 'escalated', 'failed', 'cancelled'):
             t = Thread(target=handle_wellness_no_response, args=(session_id,), daemon=True)
             t.start()
 
     elif call_type == 'emergency' and session_id:
         session = db.session.get(WellnessSession, session_id)
-        if session and not session.emergency_acknowledged:
+        if session and not session.emergency_acknowledged and session.status != 'cancelled':
             t = Thread(target=handle_emergency_no_response, args=(session_id, contact_id), daemon=True)
             t.start()
 

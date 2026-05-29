@@ -699,7 +699,6 @@ async function showAddScheduleModal() {
   document.getElementById('scheduleAmPm').value = 'AM';
   document.querySelectorAll('#dayPicker input').forEach(cb => cb.checked = true);
   document.getElementById('scheduleMp3').value = '';
-  document.getElementById('scheduleKey').value = '1';
   document.getElementById('scheduleMaxAttempts').value = 3;
   document.getElementById('scheduleInterval').value = 10;
   scheduleContacts = [];
@@ -743,7 +742,6 @@ async function editClientSchedule(id) {
     });
 
     document.getElementById('scheduleMp3').value         = s.mp3_filename || '';
-    document.getElementById('scheduleKey').value          = s.required_keypress || '1';
     document.getElementById('scheduleMaxAttempts').value  = s.max_attempts || 3;
     document.getElementById('scheduleInterval').value     = s.attempt_interval_minutes || 10;
 
@@ -795,7 +793,6 @@ async function saveSchedule(e) {
     time_of_day:              time24,
     days_of_week:             days,
     mp3_filename:             document.getElementById('scheduleMp3').value || null,
-    required_keypress:        document.getElementById('scheduleKey').value || '1',
     max_attempts:             parseInt(document.getElementById('scheduleMaxAttempts').value) || 3,
     attempt_interval_minutes: parseInt(document.getElementById('scheduleInterval').value) || 10,
     active:                   document.getElementById('scheduleActive').checked,
@@ -854,7 +851,6 @@ async function deleteClientSchedule(id) {
 function toggleScheduleFields() {
   const type = document.querySelector('input[name="callType"]:checked')?.value;
   document.getElementById('wellnessFields').style.display = type === 'wellness' ? '' : 'none';
-  document.getElementById('keyPressField').style.display  = type === 'wellness' ? '' : 'none';
   const hint = document.getElementById('audioHint');
   if (hint) hint.textContent = type === 'wellness'
     ? '(optional — falls back to text-to-speech if not set)'

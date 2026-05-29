@@ -399,6 +399,7 @@ def _call_next_emergency_contact(session_id):
                     f"{base}/webhook/call-status"
                     f"?session_id={session_id}&log_id={log.id}&call_type=emergency&contact_id={next_contact.id}"
                 ),
+                machine_detection=True,
             )
             log.call_sid = sid
             logger.info(f"Session {session_id}: calling emergency contact {next_contact.name} ({next_contact.phone})")
@@ -412,16 +413,52 @@ def _call_next_emergency_contact(session_id):
 
 
 def handle_emergency_no_response(session_id, contact_id):
-    """Called (in background thread) when emergency contact call ends without acknowledgment."""
+    """Called when an emergency contact call ends without acknowledgment.
+
+    Calls all emergency contacts in order with no wait between them.
+    After the last contact in the list has been tried, waits
+    EMERGENCY_CONTACT_INTERVAL_MINUTES then resets and repeats the cycle.
+    """
     with _app.app_context():
-        from carecall.models import WellnessSession, db
+        from carecall.models import WellnessSession, EmergencyContact, ScheduleContact, db
 
         session = db.session.get(WellnessSession, session_id)
         if not session or session.emergency_acknowledged or session.status == 'cancelled':
             return
 
-        logger.info(f"Session {session_id}: emergency contact {contact_id} did not acknowledge — trying next")
-        _schedule_next_emergency(session_id, _emergency_interval())
+        already_called = set(session.get_contacts_called())
+
+        # Build the full ordered contact list for this schedule/client
+        sched_contacts = (ScheduleContact.query
+                          .filter_by(schedule_id=session.schedule_id)
+                          .order_by(ScheduleContact.priority).all())
+        if sched_contacts:
+            all_contact_ids = [sc.emergency_contact_id for sc in sched_contacts]
+        else:
+            all_contacts = (EmergencyContact.query
+                            .filter_by(client_id=session.client_id)
+                            .order_by(EmergencyContact.priority).all())
+            all_contact_ids = [c.id for c in all_contacts]
+
+        remaining = [cid for cid in all_contact_ids if cid not in already_called]
+
+        if remaining:
+            # More contacts left in this round — call the next one immediately
+            logger.info(
+                f"Session {session_id}: EC {contact_id} no response — "
+                f"calling next EC immediately ({len(remaining)} remaining in round)"
+            )
+            _call_next_emergency_contact(session_id)
+        else:
+            # All contacts called this round — wait interval, then restart cycle
+            interval = _emergency_interval()
+            logger.info(
+                f"Session {session_id}: all ECs tried with no acknowledgment — "
+                f"waiting {interval}m then restarting cycle"
+            )
+            session.emergency_contacts_called = '[]'
+            db.session.commit()
+            _schedule_next_emergency(session_id, interval)
 
 
 def _emergency_interval():
