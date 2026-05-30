@@ -45,8 +45,9 @@ def create_app():
     app.register_blueprint(ui_bp)
 
     # ── Login guard ───────────────────────────────────────────────────────
-    # Exempt: static assets, webhook callbacks (Twilio), and the login/logout pages.
-    _EXEMPT = ('/static/', '/webhook/', '/login', '/logout')
+    # Exempt: static assets, webhook callbacks (Twilio), audio uploads (Twilio fetches
+    # MP3s directly), and the login/logout pages.
+    _EXEMPT = ('/static/', '/webhook/', '/uploads/', '/login', '/logout')
 
     @app.before_request
     def _require_login():
