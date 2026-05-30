@@ -58,6 +58,11 @@ def _register_cron_job(schedule):
     logger.info(f"Registered cron job {job_id}: {schedule.call_type} at {schedule.time_of_day}")
 
 
+def is_scheduler_running():
+    """Return True if the APScheduler background thread is alive and running."""
+    return _scheduler is not None and _scheduler.running
+
+
 def activate_schedule(schedule):
     _register_cron_job(schedule)
 

@@ -1,5 +1,5 @@
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from flask import Flask, redirect, request, session
 from flask_sqlalchemy import SQLAlchemy
@@ -25,6 +25,7 @@ def create_app():
     )
     app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+    app.config['START_TIME'] = datetime.now()
 
     # Trust X-Forwarded-Proto / X-Forwarded-Host from ngrok so that
     # request.url reflects the public HTTPS URL (required for Twilio signature validation).

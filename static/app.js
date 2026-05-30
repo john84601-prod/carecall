@@ -25,7 +25,64 @@ document.addEventListener('DOMContentLoaded', () => {
   setupUploadZone();
   _initTooltips();
   loadDashboard();
+  loadSystemStatus();
+  setInterval(loadSystemStatus, 60_000);
 });
+
+// ── System status bar ─────────────────────────────────────────────────────────
+async function loadSystemStatus() {
+  try {
+    const s = await api('GET', '/status');
+    _renderSystemStatus(s);
+    const dot = document.getElementById('statusDot');
+    if (dot) dot.className = 'status-dot ' + (s.all_ok ? 'online' : 'offline');
+  } catch(e) {
+    // API totally unreachable
+    const dot = document.getElementById('statusDot');
+    if (dot) dot.className = 'status-dot offline';
+    _renderSystemStatusError();
+  }
+}
+
+function _renderSystemStatus(s) {
+  function _setItem(dotId, lblId, ok, label) {
+    const d = document.getElementById(dotId);
+    const l = document.getElementById(lblId);
+    if (d) d.className = 'sys-dot ' + (ok ? 'sys-ok' : 'sys-err');
+    if (l) l.textContent = label;
+  }
+
+  _setItem('sysDotScheduler', 'sysLabelScheduler',
+    s.scheduler_running,
+    s.scheduler_running ? 'Scheduler' : 'Scheduler ✗ Not Running');
+
+  const urlLabel = s.public_url_ok
+    ? (s.public_url || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+    : 'No Public URL';
+  _setItem('sysDotUrl', 'sysLabelUrl', s.public_url_ok, urlLabel);
+
+  _setItem('sysDotTwilio', 'sysLabelTwilio',
+    s.twilio_configured,
+    s.twilio_configured ? 'Twilio' : 'Twilio ✗ Not Configured');
+
+  const u = document.getElementById('sysUptime');
+  if (u) u.textContent = 'Up ' + (s.uptime || '—');
+
+  const t = document.getElementById('sysServerTime');
+  if (t) t.textContent = s.server_time || '—';
+
+  const bar = document.getElementById('sysStatusBar');
+  if (bar) bar.classList.toggle('sys-warn', !s.all_ok);
+}
+
+function _renderSystemStatusError() {
+  ['sysDotScheduler','sysDotUrl','sysDotTwilio'].forEach(id => {
+    const d = document.getElementById(id);
+    if (d) d.className = 'sys-dot sys-err';
+  });
+  const bar = document.getElementById('sysStatusBar');
+  if (bar) bar.classList.add('sys-warn');
+}
 
 // ── Tooltip engine ────────────────────────────────────────────────────────────
 function _initTooltips() {

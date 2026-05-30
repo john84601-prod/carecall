@@ -1103,3 +1103,32 @@ hr { border: none; border-top: 1px solid var(--border); }
     padding: 0 !important;
   }
 }
+
+/* ── System status bar ───────────────────────────────────────────────── */
+#sysStatusBar {
+  background: #1e3655;
+  padding: .32rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: .775rem;
+  color: rgba(255,255,255,.78);
+  flex-wrap: wrap;
+  transition: background .4s;
+  min-height: 28px;
+}
+#sysStatusBar.sys-warn { background: #5c2e00; }
+#sysStatusItems, #sysStatusRight {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+.sys-item  { display: flex; align-items: center; gap: .28rem; white-space: nowrap; }
+.sys-sep   { width: 1px; height: 11px; background: rgba(255,255,255,.22); flex-shrink: 0; }
+.sys-dot   { width: 7px; height: 7px; border-radius: 50%; background: #666; flex-shrink: 0; transition: background .3s; }
+.sys-ok    { background: #45d882; }
+.sys-err   { background: #ff5f5f; }
+#sysUptime     { color: rgba(255,255,255,.6); }
+#sysServerTime { color: rgba(255,255,255,.85); font-variant-numeric: tabular-nums; }

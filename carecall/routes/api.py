@@ -553,6 +553,56 @@ def dashboard():
 
 # ── Settings & test ────────────────────────────────────────────────────────────
 
+@api_bp.route('/status', methods=['GET'])
+def get_system_status():
+    """Live system health check — scheduler, public URL, Twilio config, uptime, server time."""
+    from datetime import datetime as _dt
+    from carecall.scheduler import is_scheduler_running
+    from carecall.tunnel import get_public_url
+
+    # ── Scheduler ──────────────────────────────────────────────────────────
+    scheduler_ok = is_scheduler_running()
+
+    # ── Public URL / ngrok ─────────────────────────────────────────────────
+    try:
+        public_url = get_public_url()
+        url_ok = bool(public_url and public_url.startswith('http'))
+    except Exception:
+        public_url = None
+        url_ok = False
+
+    # ── Twilio credentials ─────────────────────────────────────────────────
+    twilio_ok = bool(
+        os.getenv('TWILIO_ACCOUNT_SID', '').startswith('AC') and
+        os.getenv('TWILIO_AUTH_TOKEN', '') and
+        os.getenv('TWILIO_FROM_NUMBER', '')
+    )
+
+    # ── Uptime ─────────────────────────────────────────────────────────────
+    start = current_app.config.get('START_TIME')
+    if start:
+        secs = int((_dt.now() - start).total_seconds())
+        d, r  = divmod(secs, 86400)
+        h, r  = divmod(r,    3600)
+        m     = r // 60
+        uptime = (f"{d}d {h}h {m}m" if d else f"{h}h {m}m" if h else f"{m}m")
+    else:
+        uptime = '—'
+
+    # ── Server time (local) ────────────────────────────────────────────────
+    server_time = _dt.now().strftime('%a, %b %-d, %Y  %-I:%M %p')
+
+    return jsonify({
+        'scheduler_running': scheduler_ok,
+        'public_url':        public_url,
+        'public_url_ok':     url_ok,
+        'twilio_configured': twilio_ok,
+        'uptime':            uptime,
+        'server_time':       server_time,
+        'all_ok':            scheduler_ok and url_ok and twilio_ok,
+    })
+
+
 @api_bp.route('/version', methods=['GET'])
 def get_version():
     """Return the running git commit hash, date, and GitHub repo for update checks."""
