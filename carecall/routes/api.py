@@ -553,6 +553,38 @@ def dashboard():
 
 # ── Settings & test ────────────────────────────────────────────────────────────
 
+@api_bp.route('/version', methods=['GET'])
+def get_version():
+    """Return the running git commit hash, date, and GitHub repo for update checks."""
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
+    def _git(*args):
+        try:
+            return subprocess.check_output(
+                ['git'] + list(args), cwd=root, stderr=subprocess.DEVNULL
+            ).decode().strip()
+        except Exception:
+            return None
+
+    commit_short = _git('rev-parse', '--short', 'HEAD') or 'unknown'
+    commit_long  = _git('rev-parse', 'HEAD')             or 'unknown'
+    commit_date  = _git('log', '-1', '--format=%cd', '--date=format:%B %d, %Y') or 'unknown'
+    remote_url   = _git('remote', 'get-url', 'origin')   or ''
+
+    # Extract owner/repo from https://github.com/owner/repo.git
+    import re
+    m = re.search(r'github\.com[/:](.+?)(?:\.git)?$', remote_url)
+    github_repo = m.group(1) if m else None
+
+    return jsonify({
+        'commit':      commit_short,
+        'commit_long': commit_long,
+        'date':        commit_date,
+        'github_repo': github_repo,
+    })
+
+
 @api_bp.route('/settings', methods=['GET'])
 def get_settings():
     from carecall.tunnel import get_public_url

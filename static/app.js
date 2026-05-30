@@ -1333,6 +1333,70 @@ async function loadSettings() {
   } catch (e) {
     toast(e.message, 'error');
   }
+  // Load version info in parallel
+  try {
+    const v = await api('GET', '/version');
+    _renderVersionInfo(v, null);
+    window._versionData = v;
+  } catch (e) {
+    document.getElementById('versionInfo').innerHTML =
+      '<span style="color:var(--muted);font-size:.85rem">Version info unavailable</span>';
+  }
+}
+
+function _renderVersionInfo(v, updateStatus) {
+  const ghUrl = v.github_repo ? `https://github.com/${v.github_repo}` : null;
+  const repoLink = ghUrl
+    ? `<a href="${ghUrl}/commits/master" target="_blank" style="color:var(--teal);font-size:.8rem">View history ↗</a>`
+    : '';
+  let statusHtml = '';
+  if (updateStatus === 'checking') {
+    statusHtml = '<span style="color:var(--muted);font-size:.83rem">Checking…</span>';
+  } else if (updateStatus === 'up_to_date') {
+    statusHtml = '<span style="color:var(--green);font-weight:600;font-size:.83rem">✓ Up to date</span>';
+  } else if (updateStatus === 'update_available') {
+    const ghUrl2 = v.github_repo ? `https://github.com/${v.github_repo}` : '#';
+    statusHtml = `<span style="color:var(--orange);font-weight:600;font-size:.83rem">
+      ⬆ Update available —
+      <code style="font-size:.78rem">cd ~/carecall && git pull && sudo systemctl restart carecall</code>
+    </span>`;
+  } else if (updateStatus === 'error') {
+    statusHtml = '<span style="color:var(--muted);font-size:.83rem">Could not reach GitHub</span>';
+  }
+  document.getElementById('versionInfo').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span style="font-family:monospace;font-size:.9rem;font-weight:600">${esc(v.commit)}</span>
+        <span style="color:var(--muted);font-size:.83rem">${esc(v.date)}</span>
+        ${repoLink}
+      </div>
+      ${statusHtml ? `<div>${statusHtml}</div>` : ''}
+    </div>
+    <button class="btn-ghost btn-sm" onclick="checkForUpdates()" id="updateCheckBtn"
+      style="flex-shrink:0;white-space:nowrap">Check for Updates</button>`;
+}
+
+async function checkForUpdates() {
+  const v = window._versionData;
+  if (!v || !v.github_repo) {
+    toast('GitHub repo info not available', 'error'); return;
+  }
+  document.getElementById('updateCheckBtn').disabled = true;
+  _renderVersionInfo(v, 'checking');
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${v.github_repo}/commits/master`,
+      { headers: { Accept: 'application/vnd.github.v3+json' } }
+    );
+    if (!res.ok) throw new Error('GitHub API error');
+    const data = await res.json();
+    const latestSha = data.sha;
+    const status = latestSha.startsWith(v.commit_long) || v.commit_long.startsWith(latestSha.substring(0, 7))
+      ? 'up_to_date' : 'update_available';
+    _renderVersionInfo(v, status);
+  } catch (e) {
+    _renderVersionInfo(v, 'error');
+  }
 }
 
 async function sendTestCall() {
