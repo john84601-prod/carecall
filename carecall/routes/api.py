@@ -521,12 +521,30 @@ def dashboard():
         ReminderSession.status.in_(['pending', 'calling'])
     ).order_by(ReminderSession.started_at.desc()).all()
 
-    recent_logs     = CallLog.query.filter(
+    recent_logs = CallLog.query.filter(
         CallLog.timestamp >= today_start
     ).order_by(CallLog.timestamp.desc()).all()
-    recent_sessions = WellnessSession.query.filter(
-        WellnessSession.started_at >= today_start
-    ).order_by(WellnessSession.started_at.desc()).all()
+
+    # Wellness alert cycles: only sessions that escalated to emergency contacts today.
+    # A session qualifies if at least one emergency call was placed for it.
+    _escalated_session_ids = (
+        db.session.query(CallLog.wellness_session_id)
+        .filter(
+            CallLog.call_type == 'emergency',
+            CallLog.timestamp  >= today_start,
+            CallLog.wellness_session_id.isnot(None),
+        )
+        .distinct()
+    )
+    recent_sessions = (
+        WellnessSession.query
+        .filter(
+            WellnessSession.started_at >= today_start,
+            WellnessSession.id.in_(_escalated_session_ids),
+        )
+        .order_by(WellnessSession.started_at.desc())
+        .all()
+    )
 
     return jsonify({
         'active_clients':   active_clients,

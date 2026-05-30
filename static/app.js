@@ -227,29 +227,32 @@ async function loadDashboard() {
       }).join('');
     }
 
-    // Wellness sessions panel (always visible, filtered to today)
+    // Wellness alert cycles panel (only escalated-to-contact sessions)
     const sessTbody = document.getElementById('wellnessSessionsTable');
     if (d.recent_sessions && d.recent_sessions.length) {
       const activeStatuses = new Set(['pending', 'calling', 'escalating']);
       sessTbody.innerHTML = d.recent_sessions.map(s => {
+        const schedCell = s.schedule_time
+          ? `${fmtScheduleTime(s.schedule_time)}${s.schedule_name ? `<br><small style="color:var(--muted)">${esc(s.schedule_name)}</small>` : ''}`
+          : '—';
         const ackBy = s.acknowledged_by_contact_name
           ? `${esc(s.acknowledged_by_contact_name)}<br><small style="color:var(--muted)">${fmtPhone(s.acknowledged_by_contact_phone || '')}</small>`
-          : (s.status === 'escalated' ? '—' : '');
+          : '—';
         const stopBtn = activeStatuses.has(s.status)
           ? `<button class="btn-danger btn-sm" onclick="cancelWellnessSession(${s.id})">⏹ Stop</button>`
           : '';
         return `<tr>
-          <td>${esc(s.client_name)}</td>
-          <td>${wellnessSessionBadge(s.status)}</td>
-          <td>${s.current_attempt}</td>
           <td style="white-space:nowrap">${fmtTime(s.started_at)}</td>
+          <td>${esc(s.client_name)}</td>
+          <td style="white-space:nowrap">${schedCell}</td>
+          <td>${s.current_attempt}</td>
           <td style="white-space:nowrap">${s.resolved_at ? fmtTime(s.resolved_at) : '—'}</td>
-          <td>${ackBy || '—'}</td>
+          <td>${ackBy}</td>
           <td>${stopBtn}</td>
         </tr>`;
       }).join('');
     } else {
-      sessTbody.innerHTML = '<tr><td colspan="7" class="empty">No wellness sessions today.</td></tr>';
+      sessTbody.innerHTML = '<tr><td colspan="7" class="empty">No alert cycles today.</td></tr>';
     }
 
     // Active reminder sessions panel
