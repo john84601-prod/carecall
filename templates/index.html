@@ -396,40 +396,15 @@
         </div>
       </div>
 
-      <!-- Collapsible: Address & Notes -->
+      <!-- Collapsible: Notes -->
       <div class="collapsible-section">
         <button type="button" class="collapsible-toggle" id="addrNotesToggle"
           onclick="toggleClientSection('addrNotesBody', this)">
-          <span class="caret-char">▶</span> Address &amp; Notes
+          <span class="caret-char">▶</span> Notes
         </button>
         <div id="addrNotesBody" class="collapsible-body" style="display:none">
-          <div class="row gap-md" style="margin-bottom:.65rem">
-            <div class="form-group flex-1" style="margin:0">
-              <label>Address</label>
-              <input type="text" id="clientAddress1" placeholder="Street address">
-            </div>
-            <div class="form-group flex-1" style="margin:0">
-              <label>Address 2 <span class="hint">(apt, suite, etc.)</span></label>
-              <input type="text" id="clientAddress2">
-            </div>
-          </div>
-          <div class="row gap-md" style="margin-bottom:.65rem">
-            <div class="form-group flex-1" style="margin:0">
-              <label>City</label>
-              <input type="text" id="clientCity">
-            </div>
-            <div class="form-group" style="width:72px;margin:0">
-              <label>State</label>
-              <input type="text" id="clientState" maxlength="2" placeholder="TX" style="text-transform:uppercase">
-            </div>
-            <div class="form-group" style="width:115px;margin:0">
-              <label>Zip</label>
-              <input type="text" id="clientZip" maxlength="10" placeholder="12345">
-            </div>
-          </div>
           <div class="form-group" style="margin:0">
-            <label>Notes</label>
-            <textarea id="clientNotes" rows="2"></textarea>
+            <textarea id="clientNotes" rows="3"></textarea>
           </div>
         </div>
       </div>
@@ -442,6 +417,8 @@
           onclick="switchClientTab('schedules')">📅 Schedules</button>
         <button class="client-inner-tab" id="clientTab-exceptions"
           onclick="switchClientTab('exceptions')">🚫 Exceptions</button>
+        <button class="client-inner-tab" id="clientTab-address"
+          onclick="switchClientTab('address')">📍 Address</button>
         <button class="client-inner-tab" id="clientTab-contacts"
           onclick="switchClientTab('contacts')">👥 Contacts</button>
         <button class="client-inner-tab" id="clientTab-audio"
@@ -492,6 +469,42 @@
         </div>
 
         <div id="blackoutList"></div>
+      </div>
+
+      <!-- Address pane -->
+      <div id="clientPane-address" class="client-tab-pane" style="display:none">
+        <div class="section-head" style="margin-top:.65rem;margin-bottom:.5rem">
+          <h4>Address</h4>
+        </div>
+        <div class="row gap-md" style="margin-bottom:.65rem">
+          <div class="form-group flex-1" style="margin:0">
+            <label>Address</label>
+            <input type="text" id="clientAddress1" placeholder="Street address">
+          </div>
+          <div class="form-group flex-1" style="margin:0">
+            <label>Address 2 <span class="hint">(apt, suite, etc.)</span></label>
+            <input type="text" id="clientAddress2">
+          </div>
+        </div>
+        <div class="row gap-md" style="margin-bottom:.85rem">
+          <div class="form-group flex-1" style="margin:0">
+            <label>City</label>
+            <input type="text" id="clientCity">
+          </div>
+          <div class="form-group" style="width:72px;margin:0">
+            <label>State</label>
+            <input type="text" id="clientState" maxlength="2" placeholder="TX"
+              style="text-transform:uppercase">
+          </div>
+          <div class="form-group" style="width:115px;margin:0">
+            <label>Zip</label>
+            <input type="text" id="clientZip" maxlength="10" placeholder="12345">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <button type="button" class="btn-primary btn-sm"
+            onclick="saveClientAddress()">Save Address</button>
+        </div>
       </div>
 
       <!-- Contacts pane -->

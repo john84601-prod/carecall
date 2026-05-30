@@ -503,10 +503,9 @@ async function editClient(id) {
   document.getElementById('clientTabsSection').style.display = '';
   document.getElementById('clientPrintBtn').style.display = '';
   switchClientTab('schedules');
-  // Auto-expand address section if client has address or notes data
-  const hasAddress = c.address1 || c.address2 || c.city || c.state || c.zip_code || c.notes;
-  document.getElementById('addrNotesBody').style.display = hasAddress ? '' : 'none';
-  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = hasAddress ? '▼' : '▶';
+  // Auto-expand Notes section if the client has notes
+  document.getElementById('addrNotesBody').style.display = c.notes ? '' : 'none';
+  document.getElementById('addrNotesToggle').querySelector('.caret-char').textContent = c.notes ? '▼' : '▶';
   await Promise.all([loadClientSchedules(id), loadContactsList(id), loadClientAudio(id)]);
   openOverlay('clientOverlay');
 }
@@ -562,11 +561,26 @@ async function deleteClient(id, name) {
 // ── Client modal helpers ──────────────────────────────────────────────────────
 
 function switchClientTab(tab) {
-  ['schedules', 'exceptions', 'contacts', 'audio'].forEach(t => {
+  ['schedules', 'exceptions', 'address', 'contacts', 'audio'].forEach(t => {
     document.getElementById(`clientTab-${t}`).classList.toggle('active', t === tab);
     document.getElementById(`clientPane-${t}`).style.display = t === tab ? '' : 'none';
   });
   if (tab === 'exceptions') loadBlackouts();
+}
+
+async function saveClientAddress() {
+  if (!currentClientId) return;
+  try {
+    await api('PUT', `/clients/${currentClientId}`, {
+      address1: document.getElementById('clientAddress1').value.trim(),
+      address2: document.getElementById('clientAddress2').value.trim(),
+      city:     document.getElementById('clientCity').value.trim(),
+      state:    document.getElementById('clientState').value.trim().toUpperCase(),
+      zip_code: document.getElementById('clientZip').value.trim(),
+    });
+    await loadClients();
+    toast('Address saved', 'success');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ── Wellness blackout / call exceptions ───────────────────────────────────────
