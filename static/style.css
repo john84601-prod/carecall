@@ -217,6 +217,7 @@ tr:hover td { background: #f8fafc; }
 .badge-orange  { background: #fef3e2; color: var(--orange); }
 .badge-blue    { background: #e8f4fb; color: var(--teal); }
 .badge-gray    { background: #f0f2f4; color: var(--muted); }
+.badge-purple  { background: #f0eafa; color: #6c35b5; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 .btn-primary, .btn-ghost {

@@ -1416,12 +1416,16 @@ function statusBadge(s) {
     failed:           'badge-red',
     'wrong-keypress': 'badge-red',
     completed:        'badge-gray',
+    system_down:      'badge-purple',
+    internet_down:    'badge-purple',
   };
   const labels = {
     reached_human:    'Reached Human',
     left_voicemail:   'Left Voicemail',
     'no-answer':      'No Answer',
     'wrong-keypress': 'Wrong Key',
+    system_down:      'System Down',
+    internet_down:    'Internet Down',
   };
   const tips = {
     initiated:        'The call was placed but has not connected yet.',
@@ -1435,6 +1439,8 @@ function statusBadge(s) {
     failed:           'The call could not connect (bad number or carrier error).',
     'wrong-keypress': 'Someone answered but pressed the wrong key.',
     completed:        'The call finished normally.',
+    system_down:      'Call missed — CareCall was not running at the scheduled time. Manual follow-up may be needed.',
+    internet_down:    'Call attempted but failed — no internet or Twilio unreachable at the time.',
   };
   const tip = tips[s] ? ` data-tooltip="${tips[s]}"` : '';
   return `<span class="badge ${classes[s] || 'badge-gray'}"${tip}>${esc(labels[s] || s)}</span>`;

@@ -28,6 +28,7 @@ def init_scheduler(app):
         _load_all_schedule_jobs()
 
     _register_midnight_rollover()
+    _startup_missed_call_check()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -99,6 +100,113 @@ def _rollover_active_sessions():
             logger.info(f"Midnight rollover: closed {len(active)} active wellness session(s)")
 
 
+# ── Startup missed-call audit ─────────────────────────────────────────────────
+
+def _startup_missed_call_check():
+    """On startup, create a 'system_down' CallLog entry for every schedule that
+    should have fired today but has no session or call log record at all.
+
+    This covers the case where the Pi was off, the service crashed, or systemd
+    hadn't started yet when the scheduled time passed.  Staff can then review
+    Today's Calls and manually follow up with any flagged clients.
+    """
+    with _app.app_context():
+        from datetime import date as _date, datetime as _dt, time as _t
+        from carecall.models import Schedule, WellnessSession, ReminderSession, CallLog, db
+
+        now_local   = _dt.now()
+        today       = now_local.date()
+        utc_offset  = _dt.utcnow() - now_local          # timedelta: how far ahead UTC is
+        today_start = _dt.combine(today, _t.min) + utc_offset  # local midnight as UTC
+
+        # APScheduler and Python weekday() both use 0=Mon … 6=Sun
+        today_dow = today.weekday()
+
+        missed = 0
+        for schedule in Schedule.query.filter_by(active=True).all():
+            if not schedule.client or not schedule.client.active:
+                continue
+
+            # Does this schedule run today?
+            try:
+                sched_days = [int(d) for d in schedule.days_of_week.split(',')]
+                sched_h, sched_m = map(int, schedule.time_of_day.split(':'))
+            except (ValueError, AttributeError):
+                continue
+            if today_dow not in sched_days:
+                continue
+
+            # Has the scheduled time already passed?
+            sched_local = _dt.combine(today, _t(sched_h, sched_m))
+            if sched_local >= now_local:
+                continue  # hasn't fired yet today — nothing missed
+
+            # Is there already any session or log for this schedule today?
+            if schedule.call_type == 'wellness':
+                has_record = WellnessSession.query.filter(
+                    WellnessSession.schedule_id == schedule.id,
+                    WellnessSession.started_at  >= today_start,
+                ).first()
+            else:
+                has_record = ReminderSession.query.filter(
+                    ReminderSession.schedule_id == schedule.id,
+                    ReminderSession.started_at  >= today_start,
+                ).first()
+
+            if not has_record:
+                # Also check for an existing call log (e.g. from a previous startup)
+                has_record = CallLog.query.filter(
+                    CallLog.schedule_id == schedule.id,
+                    CallLog.timestamp   >= today_start,
+                ).first()
+
+            if has_record:
+                continue  # already recorded — nothing to do
+
+            # Create a system_down entry timestamped at the missed scheduled time
+            sched_utc = sched_local + utc_offset
+            db.session.add(CallLog(
+                schedule_id    = schedule.id,
+                client_id      = schedule.client_id,
+                call_type      = schedule.call_type,
+                attempt_number = 1,
+                status         = 'system_down',
+                timestamp      = sched_utc,
+                notes          = 'Scheduled call missed — CareCall service was not running.',
+            ))
+            missed += 1
+            logger.warning(
+                f"Startup audit: system_down logged for {schedule.call_type} "
+                f"schedule {schedule.id} (client {schedule.client_id}) "
+                f"missed at {schedule.time_of_day}"
+            )
+
+        if missed:
+            db.session.commit()
+            logger.warning(f"Startup audit: {missed} missed call(s) logged as system_down")
+        else:
+            logger.info("Startup audit: no missed calls detected")
+
+
+def _classify_call_error(exc, base_url_obtained):
+    """Return 'internet_down' for network-level failures, 'failed' for everything else.
+
+    base_url_obtained=False means get_public_url() itself failed, which is also
+    a connectivity problem (ngrok couldn't reach the internet).
+    """
+    if not base_url_obtained:
+        return 'internet_down'
+    try:
+        import requests as _r
+        if isinstance(exc, (_r.exceptions.ConnectionError, _r.exceptions.Timeout)):
+            return 'internet_down'
+    except ImportError:
+        pass
+    if isinstance(exc, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError)):
+        return 'internet_down'
+    return 'failed'
+
+
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 def _fire_reminder(schedule_id):
@@ -150,8 +258,9 @@ def _attempt_reminder_call(session_id):
         db.session.add(log)
         db.session.flush()
 
-        base = get_public_url()
+        base = None
         try:
+            base = get_public_url()
             sid = make_call(
                 session.client.phone,
                 answer_url=(
@@ -169,8 +278,9 @@ def _attempt_reminder_call(session_id):
                 f"Reminder call: session={session_id} attempt={session.current_attempt} sid={sid}"
             )
         except Exception as e:
-            logger.error(f"Reminder call failed to initiate for session {session_id}: {e}")
-            log.status = 'failed'
+            err_status = _classify_call_error(e, base is not None)
+            logger.error(f"Reminder call {err_status} for session {session_id}: {e}")
+            log.status = err_status
             log.notes = str(e)
             session.status = 'pending'
             db.session.commit()
@@ -299,8 +409,9 @@ def _attempt_wellness_call(session_id):
         db.session.add(log)
         db.session.flush()
 
-        base = get_public_url()
+        base = None
         try:
+            base = get_public_url()
             sid = make_call(
                 session.client.phone,
                 answer_url=f"{base}/webhook/wellness-answer?session_id={session_id}&log_id={log.id}",
@@ -309,9 +420,10 @@ def _attempt_wellness_call(session_id):
             )
             log.call_sid = sid
         except Exception as e:
-            log.status = 'failed'
+            err_status = _classify_call_error(e, base is not None)
+            logger.error(f"Wellness call {err_status} for session {session_id}: {e}")
+            log.status = err_status
             log.notes = str(e)
-            logger.error(f"Wellness call failed for session {session_id}: {e}")
             session.status = 'pending'
             _schedule_wellness_retry(session_id, session.schedule.attempt_interval_minutes)
 
