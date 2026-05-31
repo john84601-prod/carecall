@@ -1237,3 +1237,26 @@ hr { border: none; border-top: 1px solid var(--border); }
 .rpt-selected-info { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
 .rpt-selected-name  { font-size: .875rem; font-weight: 600; color: var(--text); }
 .rpt-selected-phone { font-size: .78rem; color: var(--muted); }
+
+/* ── Report date navigation arrows ───────────────────────────────────── */
+.rpt-date-arrow {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: .65rem;
+  line-height: 1;
+  padding: .3rem .45rem;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.rpt-date-arrow:hover:not(:disabled) {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.rpt-date-arrow:disabled {
+  cursor: not-allowed;
+  opacity: .3;
+}

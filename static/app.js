@@ -1583,6 +1583,55 @@ function _initReportDates() {
     const el = document.getElementById(id);
     if (el && !el.value) el.value = today;
   });
+  _rptUpdateDateArrows();
+}
+
+function rptShiftDay(delta) {
+  const startEl = document.getElementById('rpt1Start');
+  const endEl   = document.getElementById('rpt1End');
+  if (!startEl.value || !endEl.value) return;
+
+  const today    = _todayStr();
+  const newStart = _shiftDateStr(startEl.value, delta);
+  const newEnd   = _shiftDateStr(endEl.value,   delta);
+
+  // Block forward movement past today
+  if (newEnd > today) return;
+  // Block if range would invert (shouldn't happen when shifting together, but safety check)
+  if (newStart > newEnd) return;
+
+  startEl.value = newStart;
+  endEl.value   = newEnd;
+  _rptUpdateDateArrows();
+}
+
+function _shiftDateStr(dateStr, delta) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);    // local midnight — no timezone shift
+  date.setDate(date.getDate() + delta);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function _todayStr() {
+  const n = new Date();
+  return [
+    n.getFullYear(),
+    String(n.getMonth() + 1).padStart(2, '0'),
+    String(n.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function _rptUpdateDateArrows() {
+  const endEl   = document.getElementById('rpt1End');
+  const nextBtn = document.getElementById('rpt1NextDay');
+  if (!nextBtn) return;
+  // Disable forward arrow when end date is already today (or in the future)
+  const today = _todayStr();
+  nextBtn.disabled = !endEl?.value || endEl.value >= today;
 }
 
 async function runReport(type) {
