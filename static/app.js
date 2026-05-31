@@ -1491,6 +1491,92 @@ async function sendTestCall() {
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 
+let _rpt1Selected = null;  // { id, full_name, phone } — client chosen from autocomplete
+
+// Close all report dropdowns when clicking outside them
+document.addEventListener('click', e => {
+  if (!e.target.closest('.rpt-ac-wrap')) {
+    document.querySelectorAll('.rpt-dropdown').forEach(d => { d.innerHTML = ''; d.style.display = 'none'; });
+  }
+});
+
+async function rptSearch(field, value) {
+  // Any new keystroke clears the current selection
+  if (_rpt1Selected) {
+    _rpt1Selected = null;
+    _rptUpdateSelectedUI();
+  }
+
+  const dropId = field === 'name' ? 'rpt1NameDropdown' : 'rpt1PhoneDropdown';
+  const drop   = document.getElementById(dropId);
+  const q      = value.trim().toLowerCase();
+
+  if (!q) { drop.innerHTML = ''; drop.style.display = 'none'; return; }
+
+  await loadClientsIfNeeded();
+
+  const matches = allClients.filter(c => {
+    if (field === 'name') {
+      return c.full_name.toLowerCase().includes(q) ||
+             c.first_name.toLowerCase().includes(q) ||
+             c.last_name.toLowerCase().includes(q);
+    } else {
+      const digits = q.replace(/\D/g, '');
+      return digits && (c.phone || '').replace(/\D/g, '').includes(digits);
+    }
+  }).slice(0, 12);
+
+  if (!matches.length) {
+    drop.innerHTML = '<div class="rpt-dropdown-empty">No clients found</div>';
+  } else {
+    drop.innerHTML = matches.map(c =>
+      `<div class="rpt-dropdown-item" onmousedown="rptSelectClient(${c.id})">
+         <span class="rpt-di-name">${esc(c.full_name)}</span>
+         <span class="rpt-di-phone">${fmtPhone(c.phone)}</span>
+       </div>`
+    ).join('');
+  }
+  drop.style.display = '';
+}
+
+function rptSelectClient(id) {
+  const c = allClients.find(x => x.id === id);
+  if (!c) return;
+  _rpt1Selected = c;
+  // Populate both fields
+  document.getElementById('rpt1Name').value  = c.full_name;
+  document.getElementById('rpt1Phone').value = fmtPhone(c.phone);
+  // Hide both dropdowns
+  ['rpt1NameDropdown','rpt1PhoneDropdown'].forEach(did => {
+    const d = document.getElementById(did);
+    d.innerHTML = ''; d.style.display = 'none';
+  });
+  _rptUpdateSelectedUI();
+}
+
+function rptClearClient() {
+  _rpt1Selected = null;
+  document.getElementById('rpt1Name').value  = '';
+  document.getElementById('rpt1Phone').value = '';
+  ['rpt1NameDropdown','rpt1PhoneDropdown'].forEach(did => {
+    const d = document.getElementById(did);
+    d.innerHTML = ''; d.style.display = 'none';
+  });
+  _rptUpdateSelectedUI();
+  document.getElementById('rpt1Name').focus();
+}
+
+function _rptUpdateSelectedUI() {
+  const el = document.getElementById('rpt1SelectedClient');
+  if (_rpt1Selected) {
+    document.getElementById('rpt1SelectedName').textContent  = _rpt1Selected.full_name;
+    document.getElementById('rpt1SelectedPhone').textContent = fmtPhone(_rpt1Selected.phone);
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 function _initReportDates() {
   const today = new Date().toISOString().split('T')[0];
   ['rpt1Start','rpt1End','rpt2Start','rpt2End'].forEach(id => {
@@ -1504,18 +1590,24 @@ async function runReport(type) {
   let title, subtitle;
 
   if (type === 'individual') {
-    const name  = document.getElementById('rpt1Name').value.trim();
-    const phone = document.getElementById('rpt1Phone').value.trim();
-    const ct    = document.querySelector('input[name="rpt1Type"]:checked')?.value || '';
-    const s     = document.getElementById('rpt1Start').value;
-    const e     = document.getElementById('rpt1End').value;
-    if (name)  params.set('name',       name);
-    if (phone) params.set('phone',      phone);
-    if (ct)    params.set('call_type',  ct);
-    if (s)     params.set('start_date', s);
-    if (e)     params.set('end_date',   e);
+    if (!_rpt1Selected) {
+      toast('Please select a client from the dropdown first', 'error');
+      document.getElementById('rpt1Name').focus();
+      return;
+    }
+    const ct = document.querySelector('input[name="rpt1Type"]:checked')?.value || '';
+    const s  = document.getElementById('rpt1Start').value;
+    const e  = document.getElementById('rpt1End').value;
+    params.set('client_id', _rpt1Selected.id);
+    if (ct) params.set('call_type',  ct);
+    if (s)  params.set('start_date', s);
+    if (e)  params.set('end_date',   e);
     title    = 'Individual Call History';
-    subtitle = _rptFilterSummary({ name, phone, callType: ct, start: s, end: e });
+    subtitle = _rptFilterSummary({
+      clientName: _rpt1Selected.full_name,
+      clientPhone: _rpt1Selected.phone,
+      callType: ct, start: s, end: e,
+    });
   } else {
     const ct = document.querySelector('input[name="rpt2Type"]:checked')?.value || '';
     const s  = document.getElementById('rpt2Start').value;
@@ -1539,8 +1631,10 @@ async function runReport(type) {
   }
 }
 
-function _rptFilterSummary({ name, phone, callType, start, end }) {
+function _rptFilterSummary({ clientName, clientPhone, callType, start, end }) {
   const parts = [];
+  if (clientName) parts.push(`${clientName}  ${fmtPhone(clientPhone || '')}`);
+
   if (start && end && start === end) parts.push(_fmtDateMDY(start));
   else if (start && end)             parts.push(`${_fmtDateMDY(start)} – ${_fmtDateMDY(end)}`);
   else if (start)                    parts.push(`From ${_fmtDateMDY(start)}`);
@@ -1551,8 +1645,6 @@ function _rptFilterSummary({ name, phone, callType, start, end }) {
   else if (callType === 'wellness')  parts.push('Wellness calls only');
   else                               parts.push('All call types');
 
-  if (name)  parts.push(`Name: ${name}`);
-  if (phone) parts.push(`Phone: ${phone}`);
   return parts.join('  ·  ');
 }
 

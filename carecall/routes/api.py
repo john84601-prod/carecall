@@ -585,6 +585,7 @@ def report_calls():
     """
     from datetime import datetime as _dt, timedelta
 
+    client_id  = request.args.get('client_id',  type=int)   # exact match (Individual report)
     name       = request.args.get('name',       '').strip().lower()
     phone      = request.args.get('phone',      '').strip()
     call_type  = request.args.get('call_type',  '')   # '' = both
@@ -614,6 +615,10 @@ def report_calls():
     elif call_type == 'wellness':
         # Include emergency escalation calls — they are part of the wellness flow
         q = q.filter(CallLog.call_type.in_(['wellness', 'emergency']))
+
+    # Exact client match (Individual report — user selected from autocomplete)
+    if client_id:
+        q = q.filter(CallLog.client_id == client_id)
 
     if name or phone:
         q = q.join(Client, CallLog.client_id == Client.id)

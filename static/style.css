@@ -1185,3 +1185,55 @@ hr { border: none; border-top: 1px solid var(--border); }
   flex-wrap: wrap;
 }
 .rpt-date-sep { color: var(--muted); font-size: .82rem; }
+
+/* ── Report autocomplete ─────────────────────────────────────────────── */
+.rpt-ac-wrap { position: relative; }
+.rpt-dropdown {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 6px 16px rgba(0,0,0,.12);
+  display: none;
+  left: 0; right: 0;
+  max-height: 210px;
+  overflow-y: auto;
+  position: absolute;
+  top: 100%;
+  z-index: 300;
+}
+.rpt-dropdown-item {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .48rem .75rem;
+}
+.rpt-dropdown-item:last-child { border-bottom: none; }
+.rpt-dropdown-item:hover { background: #eef6ff; }
+.rpt-di-name  { font-size: .875rem; font-weight: 500; }
+.rpt-di-phone { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.rpt-dropdown-empty {
+  color: var(--muted);
+  font-size: .83rem;
+  font-style: italic;
+  padding: .5rem .75rem;
+}
+
+/* ── Selected client indicator ───────────────────────────────────────── */
+.rpt-selected-client {
+  align-items: center;
+  background: #e8f8f0;
+  border: 1px solid #a8d8b9;
+  border-radius: var(--radius);
+  display: flex;
+  gap: .5rem;
+  justify-content: space-between;
+  margin-top: .4rem;
+  padding: .4rem .65rem .4rem .75rem;
+}
+.rpt-selected-info { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
+.rpt-selected-name  { font-size: .875rem; font-weight: 600; color: var(--text); }
+.rpt-selected-phone { font-size: .78rem; color: var(--muted); }

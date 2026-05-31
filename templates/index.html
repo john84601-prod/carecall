@@ -282,16 +282,33 @@
       <div class="report-tile">
         <div class="report-tile-head">
           <h3 class="report-tile-title">Individual Call History</h3>
-          <p class="report-tile-desc">All calls for one or more clients matching the search criteria.</p>
+          <p class="report-tile-desc">Search for a client, select them, then run the report.</p>
         </div>
         <div class="report-tile-filters">
           <div class="form-group" style="margin:0">
-            <label>Name</label>
-            <input type="search" id="rpt1Name" placeholder="First or last name…">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Phone</label>
-            <input type="search" id="rpt1Phone" placeholder="Phone number…">
+            <label>Client</label>
+            <div class="rpt-ac-wrap">
+              <input type="search" id="rpt1Name" placeholder="Type a name…"
+                oninput="rptSearch('name', this.value)"
+                onfocus="if(this.value.trim()) rptSearch('name', this.value)"
+                autocomplete="off">
+              <div id="rpt1NameDropdown" class="rpt-dropdown"></div>
+            </div>
+            <div class="rpt-ac-wrap" style="margin-top:.4rem">
+              <input type="search" id="rpt1Phone" placeholder="…or type a phone number"
+                oninput="rptSearch('phone', this.value)"
+                onfocus="if(this.value.trim()) rptSearch('phone', this.value)"
+                autocomplete="off">
+              <div id="rpt1PhoneDropdown" class="rpt-dropdown"></div>
+            </div>
+            <div id="rpt1SelectedClient" class="rpt-selected-client" style="display:none">
+              <div class="rpt-selected-info">
+                <span class="rpt-selected-name" id="rpt1SelectedName"></span>
+                <span class="rpt-selected-phone" id="rpt1SelectedPhone"></span>
+              </div>
+              <button type="button" class="btn-ghost btn-sm"
+                onclick="rptClearClient()">✕ Clear</button>
+            </div>
           </div>
           <div class="form-group" style="margin:0">
             <label>Call Type</label>
