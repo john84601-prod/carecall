@@ -1625,13 +1625,31 @@ function _todayStr() {
   ].join('-');
 }
 
+function rpt2ShiftDay(delta) {
+  const startEl = document.getElementById('rpt2Start');
+  const endEl   = document.getElementById('rpt2End');
+  if (!startEl.value || !endEl.value) return;
+
+  const today    = _todayStr();
+  const newStart = _shiftDateStr(startEl.value, delta);
+  const newEnd   = _shiftDateStr(endEl.value,   delta);
+
+  if (newEnd > today) return;
+  if (newStart > newEnd) return;
+
+  startEl.value = newStart;
+  endEl.value   = newEnd;
+  _rptUpdateDateArrows();
+}
+
 function _rptUpdateDateArrows() {
-  const endEl   = document.getElementById('rpt1End');
-  const nextBtn = document.getElementById('rpt1NextDay');
-  if (!nextBtn) return;
-  // Disable forward arrow when end date is already today (or in the future)
   const today = _todayStr();
-  nextBtn.disabled = !endEl?.value || endEl.value >= today;
+  const end1  = document.getElementById('rpt1End');
+  const btn1  = document.getElementById('rpt1NextDay');
+  if (btn1) btn1.disabled = !end1?.value || end1.value >= today;
+  const end2  = document.getElementById('rpt2End');
+  const btn2  = document.getElementById('rpt2NextDay');
+  if (btn2) btn2.disabled = !end2?.value || end2.value >= today;
 }
 
 async function runReport(type) {

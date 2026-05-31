@@ -279,7 +279,7 @@
     <div class="report-tiles">
 
       <!-- Individual Call History -->
-      <div class="report-tile">
+      <div class="report-tile report-tile-lg">
         <div class="report-tile-head">
           <h3 class="report-tile-title">Individual Call History</h3>
           <p class="report-tile-desc">Search for a client, select them, then run the report.</p>
@@ -356,9 +356,15 @@
           <div class="form-group" style="margin:0">
             <label>Date Range</label>
             <div class="rpt-date-range">
-              <input type="date" id="rpt2Start">
+              <button type="button" class="rpt-date-arrow" onclick="rpt2ShiftDay(-1)"
+                title="Previous day">&#9664;</button>
+              <input type="date" id="rpt2Start"
+                onchange="_rptUpdateDateArrows()">
               <span class="rpt-date-sep">to</span>
-              <input type="date" id="rpt2End">
+              <input type="date" id="rpt2End"
+                onchange="_rptUpdateDateArrows()">
+              <button type="button" class="rpt-date-arrow" id="rpt2NextDay"
+                onclick="rpt2ShiftDay(1)" title="Next day">&#9654;</button>
             </div>
           </div>
         </div>

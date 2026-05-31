@@ -1145,11 +1145,12 @@ hr { border: none; border-top: 1px solid var(--border); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  width: 340px;
+  width: 420px;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
+.report-tile-lg { width: 490px; }
 .report-tile-head {
   padding: 1.1rem 1.25rem .75rem;
   border-bottom: 1px solid var(--border);
@@ -1182,7 +1183,6 @@ hr { border: none; border-top: 1px solid var(--border); }
   display: flex;
   align-items: center;
   gap: .45rem;
-  flex-wrap: wrap;
 }
 .rpt-date-sep { color: var(--muted); font-size: .82rem; }
 
