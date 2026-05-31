@@ -1536,7 +1536,7 @@ async function rptSearch(field, value) {
        </div>`
     ).join('');
   }
-  drop.style.display = '';
+  drop.style.display = 'block';
 }
 
 function rptSelectClient(id) {
