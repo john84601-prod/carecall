@@ -22,11 +22,20 @@ def get_from_number():
     return num
 
 
-def make_call(to_number, answer_url, status_callback_url, machine_detection=False):
+def make_call(to_number, answer_url, status_callback_url,
+              machine_detection=False, amd_status_callback_url=None):
     """Initiate an outbound call. Returns the Twilio call SID.
 
-    machine_detection=True enables Twilio AMD — the answer webhook will receive
-    an AnsweredBy parameter: 'human', 'machine_start', 'machine_end_beep', etc.
+    machine_detection=True enables Twilio AMD.
+
+    When amd_status_callback_url is also provided, asyncAmd mode is used:
+    the answer webhook fires IMMEDIATELY when the call connects (no delay),
+    and the AMD result is delivered separately to amd_status_callback_url.
+    This eliminates the 3-5 second silence that humans experience while
+    Twilio performs its analysis.
+
+    Without amd_status_callback_url, DetectMessageEnd mode is used:
+    Twilio waits for the voicemail beep before firing the answer webhook.
     """
     client = get_client()
     params = dict(
@@ -39,9 +48,13 @@ def make_call(to_number, answer_url, status_callback_url, machine_detection=Fals
         status_callback_method='POST',
     )
     if machine_detection:
-        # DetectMessageEnd waits for the voicemail beep before firing the
-        # answer webhook, so the message plays after the greeting finishes.
         params['machine_detection'] = 'DetectMessageEnd'
+        if amd_status_callback_url:
+            # Async AMD: answer webhook fires immediately; AMD result comes
+            # back on a separate callback so we can redirect voicemail calls.
+            params['async_amd']                    = 'true'
+            params['async_amd_status_callback']    = amd_status_callback_url
+            params['async_amd_status_callback_method'] = 'POST'
 
     call = client.calls.create(**params)
     logger.info(f"Call initiated to {to_number} — SID: {call.sid}")

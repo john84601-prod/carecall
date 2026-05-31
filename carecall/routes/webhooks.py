@@ -97,16 +97,19 @@ def reminder_answer():
 
 @webhooks_bp.route('/wellness-answer', methods=['POST'])
 def wellness_answer():
+    """Fires immediately when the call connects (asyncAmd mode).
+
+    The AMD result comes separately via /wellness-amd-result, so we don't
+    know yet whether a human or machine answered.  We always respond with a
+    Gather so the message starts playing right away — no 3-5 second silence.
+    If the AMD callback determines it's voicemail, it redirects the live
+    call to /wellness-voicemail before the Gather timeout expires.
+    """
     session_id = request.args.get('session_id', type=int)
-    log_id = request.args.get('log_id', type=int)
+    log_id     = request.args.get('log_id',     type=int)
 
     session = db.session.get(WellnessSession, session_id) if session_id else None
-    log = db.session.get(CallLog, log_id) if log_id else None
-
-    # AnsweredBy values: human | machine_start | machine_end_beep |
-    #                    machine_end_silence | machine_end_other | fax | unknown
-    answered_by = request.form.get('AnsweredBy', 'human')
-    is_machine = answered_by.startswith('machine')
+    log     = db.session.get(CallLog,         log_id)     if log_id     else None
 
     if log:
         log.status = 'answered'
@@ -115,43 +118,108 @@ def wellness_answer():
     vr = VoiceResponse()
 
     if session:
-        client = session.client
+        client   = session.client
         schedule = session.schedule
-        key = _required_keypress()
+        key      = _required_keypress()
 
-        if is_machine:
-            # Voicemail — play audio after the beep (DetectMessageEnd already waited for it),
-            # then hang up. Voicemail can't send DTMF so no Gather needed.
-            if schedule.mp3_filename:
-                vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
-            else:
-                vr.say(
-                    f"Hello {client.first_name}, this is a wellness check call. "
-                    f"We were unable to reach you. Please call back or press {key} "
-                    "when we try again to confirm you are okay.",
-                    voice=_voice(),
-                )
+        # Generous timeout — DetectMessageEnd can take up to ~30 s on some
+        # carriers to confirm the beep before the AMD callback fires and
+        # redirects the call away from this Gather.
+        gather = Gather(
+            num_digits=1,
+            action=f"{_public_url()}/webhook/wellness-keypress"
+                   f"?session_id={session_id}&log_id={log_id}",
+            method='POST',
+            timeout=30,
+        )
+
+        if schedule.mp3_filename:
+            gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
         else:
-            # Human answered — gather keypress confirmation
-            gather = Gather(
-                num_digits=1,
-                action=f"{_public_url()}/webhook/wellness-keypress?session_id={session_id}&log_id={log_id}",
-                method='POST',
-                timeout=15,
+            gather.say(
+                f"Hello {client.first_name}, this is your wellness check call. "
+                f"Please press {key} to confirm you are okay.",
+                voice=_voice(),
             )
 
-            if schedule.mp3_filename:
-                # Play the custom audio prompt inside the gather
-                gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
-            else:
-                gather.say(
-                    f"Hello {client.first_name}, this is your wellness check call. "
-                    f"Please press {key} to confirm you are okay.",
-                    voice=_voice(),
-                )
+        vr.append(gather)
+        vr.say("We did not receive your response. Goodbye.", voice=_voice())
+    else:
+        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
 
-            vr.append(gather)
-            vr.say("We did not receive your response. Goodbye.", voice=_voice())
+    return _xml(vr)
+
+
+@webhooks_bp.route('/wellness-amd-result', methods=['POST'])
+def wellness_amd_result():
+    """Async AMD status callback — fires when Twilio determines human vs machine.
+
+    For humans the Gather in wellness_answer already handles everything.
+    For voicemail we redirect the live call to /wellness-voicemail so the
+    message plays cleanly after the beep (DetectMessageEnd already waited).
+    """
+    import os as _os
+    session_id  = request.args.get('session_id', type=int)
+    log_id      = request.args.get('log_id',     type=int)
+    call_sid    = request.form.get('CallSid', '')
+    answered_by = request.form.get('AnsweredBy', 'human')
+    is_machine  = answered_by.startswith('machine')
+
+    logger.info(f"AMD result session={session_id} AnsweredBy={answered_by}")
+
+    if is_machine and call_sid:
+        # Interrupt the Gather and redirect to voicemail TwiML.
+        try:
+            from twilio.rest import Client as _TwilioClient
+            tw = _TwilioClient(
+                _os.getenv('TWILIO_ACCOUNT_SID'),
+                _os.getenv('TWILIO_AUTH_TOKEN'),
+            )
+            tw.calls(call_sid).update(
+                url=(f"{_public_url()}/webhook/wellness-voicemail"
+                     f"?session_id={session_id}&log_id={log_id}"),
+                method='POST',
+            )
+            logger.info(f"Redirected call {call_sid} to voicemail handler")
+        except Exception as e:
+            logger.error(f"Failed to redirect call {call_sid} to voicemail: {e}")
+
+    return '', 204
+
+
+@webhooks_bp.route('/wellness-voicemail', methods=['POST'])
+def wellness_voicemail():
+    """TwiML served after DetectMessageEnd confirms the beep.
+
+    The call was redirected here by wellness_amd_result.  Play the message
+    into the voicemail recording and hang up.
+    """
+    session_id = request.args.get('session_id', type=int)
+    log_id     = request.args.get('log_id',     type=int)
+
+    session = db.session.get(WellnessSession, session_id) if session_id else None
+    log     = db.session.get(CallLog,         log_id)     if log_id     else None
+
+    if log:
+        log.status = 'left_voicemail'
+        db.session.commit()
+
+    vr = VoiceResponse()
+
+    if session:
+        client   = session.client
+        schedule = session.schedule
+        key      = _required_keypress()
+
+        if schedule.mp3_filename:
+            vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+        else:
+            vr.say(
+                f"Hello {client.first_name}, this is a wellness check call. "
+                f"We were unable to reach you. Please call back or press {key} "
+                "when we try again to confirm you are okay.",
+                voice=_voice(),
+            )
     else:
         vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
 
