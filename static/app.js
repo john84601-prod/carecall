@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   setupUploadZone();
   _initTooltips();
+  _initReportDates();
   loadDashboard();
   loadSystemStatus();
   setInterval(loadSystemStatus, 60_000);
@@ -136,6 +137,7 @@ function setupTabs() {
         case 'dashboard': loadDashboard(); break;
         case 'clients':   loadClients();   break;
         case 'schedules': loadSchedules(); break;
+        case 'reports':   /* tiles are static; dates already initialised */ break;
         case 'audio':     loadAudio();     break;
         case 'settings':  loadSettings();  break;
       }
@@ -1487,6 +1489,134 @@ async function sendTestCall() {
   }
 }
 
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+function _initReportDates() {
+  const today = new Date().toISOString().split('T')[0];
+  ['rpt1Start','rpt1End','rpt2Start','rpt2End'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = today;
+  });
+}
+
+async function runReport(type) {
+  const params = new URLSearchParams();
+  let title, subtitle;
+
+  if (type === 'individual') {
+    const name  = document.getElementById('rpt1Name').value.trim();
+    const phone = document.getElementById('rpt1Phone').value.trim();
+    const ct    = document.querySelector('input[name="rpt1Type"]:checked')?.value || '';
+    const s     = document.getElementById('rpt1Start').value;
+    const e     = document.getElementById('rpt1End').value;
+    if (name)  params.set('name',       name);
+    if (phone) params.set('phone',      phone);
+    if (ct)    params.set('call_type',  ct);
+    if (s)     params.set('start_date', s);
+    if (e)     params.set('end_date',   e);
+    title    = 'Individual Call History';
+    subtitle = _rptFilterSummary({ name, phone, callType: ct, start: s, end: e });
+  } else {
+    const ct = document.querySelector('input[name="rpt2Type"]:checked')?.value || '';
+    const s  = document.getElementById('rpt2Start').value;
+    const e  = document.getElementById('rpt2End').value;
+    if (ct) params.set('call_type',  ct);
+    if (s)  params.set('start_date', s);
+    if (e)  params.set('end_date',   e);
+    title    = 'System Call History';
+    subtitle = _rptFilterSummary({ callType: ct, start: s, end: e });
+  }
+
+  try {
+    const rows = await api('GET', `/reports/calls?${params}`);
+    _printReportTitle = title;
+    _printClientData  = null;
+    document.getElementById('printPageContent').innerHTML =
+      _buildCallReportHtml(rows, title, subtitle);
+    document.getElementById('printPreviewOverlay').style.display = '';
+  } catch(e) {
+    toast('Report failed: ' + e.message, 'error');
+  }
+}
+
+function _rptFilterSummary({ name, phone, callType, start, end }) {
+  const parts = [];
+  if (start && end && start === end) parts.push(_fmtDateMDY(start));
+  else if (start && end)             parts.push(`${_fmtDateMDY(start)} – ${_fmtDateMDY(end)}`);
+  else if (start)                    parts.push(`From ${_fmtDateMDY(start)}`);
+  else if (end)                      parts.push(`Through ${_fmtDateMDY(end)}`);
+  else                               parts.push('All dates');
+
+  if (callType === 'reminder')       parts.push('Reminder calls only');
+  else if (callType === 'wellness')  parts.push('Wellness calls only');
+  else                               parts.push('All call types');
+
+  if (name)  parts.push(`Name: ${name}`);
+  if (phone) parts.push(`Phone: ${phone}`);
+  return parts.join('  ·  ');
+}
+
+function _buildCallReportHtml(rows, title, subtitle) {
+  const printDate = new Date().toLocaleDateString('en-US',
+    { weekday:'short', year:'numeric', month:'long', day:'numeric' });
+
+  const rowsHtml = rows.map(r => {
+    const schedCell = r.schedule_time
+      ? `${fmtScheduleTime(r.schedule_time)}${r.schedule_name
+          ? `<br><small>${esc(r.schedule_name)}</small>` : ''}`
+      : '—';
+    const typeLabel = { reminder:'Reminder', wellness:'Wellness', emergency:'Emergency' }[r.call_type]
+      || r.call_type;
+    const statusLabel = {
+      system_down:   'System Down',
+      internet_down: 'Internet Down',
+      reached_human: 'Reached Human',
+      left_voicemail:'Left Voicemail',
+      'no-answer':   'No Answer',
+      'wrong-keypress':'Wrong Key',
+    }[r.status] || (r.status || '—');
+
+    return `<tr>
+      <td style="white-space:nowrap">${fmtTime(r.timestamp)}</td>
+      <td>${esc(r.client_name)}</td>
+      <td style="white-space:nowrap">${fmtPhone(r.client_phone || '')}</td>
+      <td>${typeLabel}</td>
+      <td style="white-space:nowrap">${schedCell}</td>
+      <td style="text-align:center">#${r.attempt_number}</td>
+      <td>${statusLabel}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="pp-header">
+      <div class="pp-logo">CareCall</div>
+      <div class="pp-print-date">Generated ${printDate}</div>
+    </div>
+
+    <div class="pp-name">${esc(title)}</div>
+    <div class="pp-meta" style="margin-bottom:.15rem">${esc(subtitle)}</div>
+
+    <div class="pp-section-title">
+      Call Log &mdash; ${rows.length} record${rows.length !== 1 ? 's' : ''}
+    </div>
+
+    ${rows.length ? `
+      <table class="pp-table">
+        <thead><tr>
+          <th>Date / Time</th>
+          <th>Client</th>
+          <th>Phone</th>
+          <th>Type</th>
+          <th>Schedule</th>
+          <th>Attempt</th>
+          <th>Status</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`
+    : '<p class="pp-empty" style="margin-top:.5rem">No calls found matching the selected filters.</p>'}
+  `;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function loadClientsIfNeeded() {
   if (!allClients.length) {
@@ -1658,7 +1788,8 @@ function fmtScheduleTime(t) {
 }
 
 // ── Print preview & PDF download ──────────────────────────────────────────────
-let _printClientData = null;
+let _printClientData  = null;
+let _printReportTitle = null; // set when a report is opened; used for PDF filename
 
 async function openPrintPreview() {
   if (!currentClientId) return;
@@ -1720,7 +1851,7 @@ async function downloadClientPdf() {
       page++;
     }
 
-    const name = (_printClientData?.full_name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+    const name = (_printReportTitle || _printClientData?.full_name || 'Report').replace(/[^a-zA-Z0-9 ]/g, ' ').trim().replace(/\s+/g, '_');
     pdf.save(`${name}_CareCall.pdf`);
   } catch(e) {
     toast('PDF generation failed: ' + e.message, 'error');

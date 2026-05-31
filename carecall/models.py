@@ -318,8 +318,9 @@ class CallLog(db.Model):
         session_status = (_ws.status if _ws else None) or (_rs.status if _rs else None)
         return {
             'id': self.id,
-            'client_id': self.client_id,
-            'client_name': self.client.full_name if self.client else '',
+            'client_id':    self.client_id,
+            'client_name':  self.client.full_name if self.client else '',
+            'client_phone': self.client.phone     if self.client else '',
             'schedule_id':   self.schedule_id,
             'schedule_time': _sched.time_of_day if _sched else None,
             'schedule_name': _sched.name        if _sched else None,

@@ -25,6 +25,7 @@
   <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
   <button class="nav-btn" data-tab="clients">Clients</button>
   <button class="nav-btn" data-tab="schedules">Schedules</button>
+  <button class="nav-btn" data-tab="reports">Reports</button>
   <button class="nav-btn" data-tab="audio">Audio Files</button>
   <button class="nav-btn" data-tab="settings">Settings</button>
 </nav>
@@ -267,6 +268,82 @@
         </tr></thead>
         <tbody id="schedulesTable"></tbody>
       </table>
+    </div>
+  </section>
+
+  <!-- ── Reports ──────────────────────────────────────────────────── -->
+  <section id="tab-reports" class="tab">
+    <div class="section-head">
+      <h2>Reports</h2>
+    </div>
+    <div class="report-tiles">
+
+      <!-- Individual Call History -->
+      <div class="report-tile">
+        <div class="report-tile-head">
+          <h3 class="report-tile-title">Individual Call History</h3>
+          <p class="report-tile-desc">All calls for one or more clients matching the search criteria.</p>
+        </div>
+        <div class="report-tile-filters">
+          <div class="form-group" style="margin:0">
+            <label>Name</label>
+            <input type="search" id="rpt1Name" placeholder="First or last name…">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Phone</label>
+            <input type="search" id="rpt1Phone" placeholder="Phone number…">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Call Type</label>
+            <div class="filter-seg">
+              <label><input type="radio" name="rpt1Type" value="" checked><span>Both</span></label>
+              <label><input type="radio" name="rpt1Type" value="reminder"><span>Reminder</span></label>
+              <label><input type="radio" name="rpt1Type" value="wellness"><span>Wellness</span></label>
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Date Range</label>
+            <div class="rpt-date-range">
+              <input type="date" id="rpt1Start">
+              <span class="rpt-date-sep">to</span>
+              <input type="date" id="rpt1End">
+            </div>
+          </div>
+        </div>
+        <div class="report-tile-foot">
+          <button class="btn-primary" onclick="runReport('individual')">▶ Run Report</button>
+        </div>
+      </div>
+
+      <!-- System Call History -->
+      <div class="report-tile">
+        <div class="report-tile-head">
+          <h3 class="report-tile-title">System Call History</h3>
+          <p class="report-tile-desc">All calls across all clients for the selected period.</p>
+        </div>
+        <div class="report-tile-filters">
+          <div class="form-group" style="margin:0">
+            <label>Call Type</label>
+            <div class="filter-seg">
+              <label><input type="radio" name="rpt2Type" value="" checked><span>Both</span></label>
+              <label><input type="radio" name="rpt2Type" value="reminder"><span>Reminder</span></label>
+              <label><input type="radio" name="rpt2Type" value="wellness"><span>Wellness</span></label>
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Date Range</label>
+            <div class="rpt-date-range">
+              <input type="date" id="rpt2Start">
+              <span class="rpt-date-sep">to</span>
+              <input type="date" id="rpt2End">
+            </div>
+          </div>
+        </div>
+        <div class="report-tile-foot">
+          <button class="btn-primary" onclick="runReport('system')">▶ Run Report</button>
+        </div>
+      </div>
+
     </div>
   </section>
 

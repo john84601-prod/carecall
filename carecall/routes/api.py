@@ -569,6 +569,70 @@ def dashboard():
     })
 
 
+# ── Reports ────────────────────────────────────────────────────────────────────
+
+@api_bp.route('/reports/calls', methods=['GET'])
+def report_calls():
+    """Flexible call log report used by both Individual and System Call History.
+
+    Query params:
+      name        – partial first or last name match (Individual report)
+      phone       – partial phone number match (Individual report)
+      call_type   – 'reminder' | 'wellness' | '' (both)
+                    'wellness' also includes 'emergency' escalation calls
+      start_date  – YYYY-MM-DD local date (inclusive)
+      end_date    – YYYY-MM-DD local date (inclusive)
+    """
+    from datetime import datetime as _dt, timedelta
+
+    name       = request.args.get('name',       '').strip().lower()
+    phone      = request.args.get('phone',      '').strip()
+    call_type  = request.args.get('call_type',  '')   # '' = both
+    start_date = request.args.get('start_date', '')
+    end_date   = request.args.get('end_date',   '')
+
+    # Convert local dates to UTC boundaries for DB comparison
+    local_now  = _dt.now()
+    utc_offset = _dt.utcnow() - local_now   # timedelta: how far ahead UTC is
+
+    q = CallLog.query
+
+    if start_date:
+        sd = _parse_date(start_date)
+        if sd:
+            q = q.filter(CallLog.timestamp >= _dt.combine(sd, _dt.min.time()) + utc_offset)
+
+    if end_date:
+        ed = _parse_date(end_date)
+        if ed:
+            # end of local day = start of next day in UTC
+            q = q.filter(CallLog.timestamp <
+                         _dt.combine(ed, _dt.min.time()) + utc_offset + timedelta(days=1))
+
+    if call_type == 'reminder':
+        q = q.filter(CallLog.call_type == 'reminder')
+    elif call_type == 'wellness':
+        # Include emergency escalation calls — they are part of the wellness flow
+        q = q.filter(CallLog.call_type.in_(['wellness', 'emergency']))
+
+    if name or phone:
+        q = q.join(Client, CallLog.client_id == Client.id)
+        if name:
+            q = q.filter(
+                db.or_(
+                    Client.first_name.ilike(f'%{name}%'),
+                    Client.last_name.ilike(f'%{name}%'),
+                )
+            )
+        if phone:
+            digits = re.sub(r'\D', '', phone)
+            if digits:
+                q = q.filter(Client.phone.contains(digits))
+
+    logs = q.order_by(CallLog.timestamp.desc()).limit(2000).all()
+    return jsonify([l.to_dict() for l in logs])
+
+
 # ── Settings & test ────────────────────────────────────────────────────────────
 
 @api_bp.route('/status', methods=['GET'])
