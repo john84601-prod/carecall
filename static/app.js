@@ -891,25 +891,65 @@ function discardClientRecording() {
 }
 
 // ── Schedules tab (read-only overview) ────────────────────────────────────────
+let _schedAllSchedules = [];
+
 async function loadSchedules() {
   try {
-    const schedules = await api('GET', '/schedules');
-    const tbody = document.getElementById('schedulesTable');
-    if (!schedules.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = schedules.map(s => `
-      <tr>
-        <td>${esc(s.client_name)}</td>
-        <td style="white-space:nowrap;font-weight:600">${fmt12h(s.time_of_day)}</td>
-        <td>${esc(s.name || '—')}</td>
-        <td>${typeBadge(s.call_type)}</td>
-        <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
-      </tr>`).join('');
+    _schedAllSchedules = await api('GET', '/schedules');
+    // Initialise date picker to today if not already set
+    const picker = document.getElementById('schedDate');
+    if (picker && !picker.value) picker.value = _todayStr();
+    _renderSchedules();
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+function _renderSchedules() {
+  const tbody  = document.getElementById('schedulesTable');
+  const picker = document.getElementById('schedDate');
+  const dateStr = picker ? picker.value : _todayStr();
+
+  if (!_schedAllSchedules.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
+    return;
+  }
+
+  // Convert selected date → APScheduler day-of-week (0=Mon … 6=Sun)
+  // JS Date.getDay() is 0=Sun…6=Sat; shift: (jsDay + 6) % 7
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const jsDay    = new Date(y, m - 1, d).getDay();
+  const apDay    = String((jsDay + 6) % 7);
+
+  const filtered = _schedAllSchedules.filter(s => {
+    const dow = (s.days_of_week || '').split(',').map(x => x.trim());
+    return dow.includes(apDay);
+  });
+
+  if (!filtered.length) {
+    const label = dateStr === _todayStr() ? 'today' : 'the selected date';
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">No calls scheduled for ${label}.</td></tr>`;
+    return;
+  }
+
+  // Sort by time_of_day ascending
+  filtered.sort((a, b) => (a.time_of_day || '').localeCompare(b.time_of_day || ''));
+
+  tbody.innerHTML = filtered.map(s => `
+    <tr>
+      <td>${esc(s.client_name)}</td>
+      <td style="white-space:nowrap;font-weight:600">${fmt12h(s.time_of_day)}</td>
+      <td>${esc(s.name || '—')}</td>
+      <td>${typeBadge(s.call_type)}</td>
+      <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
+    </tr>`).join('');
+}
+
+function schedShiftDay(delta) {
+  const picker = document.getElementById('schedDate');
+  if (!picker || !picker.value) return;
+  picker.value = _shiftDateStr(picker.value, delta);
+  _renderSchedules();
 }
 
 // ── Per-client schedule list (inside client modal) ─────────────────────────────
