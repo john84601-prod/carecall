@@ -973,6 +973,7 @@ async function schedAdminOk(scheduleId, clientName, callName, dateStr) {
     await api('POST', `/schedules/${scheduleId}/admin-ok`, { date: dateStr });
     toast(`Admin OK recorded for ${clientName}`, 'success');
     _renderSchedules();
+    if (currentClientId) loadClientSchedules(currentClientId);
   } catch (e) {
     toast(e.message || 'Failed to record Admin OK', 'error');
   }
@@ -1015,7 +1016,9 @@ async function renderClientSchedules(schedules) {
     const status = schedStatuses[s.id];
     const statusHtml = status
       ? `<div style="display:flex;align-items:center">${schedStatusBadge(status)}</div>`
-      : '';
+      : `<div style="display:flex;align-items:center"><button class="btn-ok btn-sm"
+          onclick="schedAdminOk(${s.id}, '${esc(s.client_name)}', '${esc(s.name || s.call_type)}', '${_todayStr()}')">
+          ✓ OK</button></div>`;
     return `
       <div class="schedule-item">
         <div class="schedule-item-info">
