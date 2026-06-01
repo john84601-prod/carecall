@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from carecall import db
 import json
 
@@ -316,6 +316,13 @@ class CallLog(db.Model):
         _rs    = self.reminder_session
         # Session status reflects the overall outcome of the parent call session
         session_status = (_ws.status if _ws else None) or (_rs.status if _rs else None)
+        # Next attempt time: only meaningful while a session is still active
+        _active = session_status in ('pending', 'calling', 'escalating')
+        _next_attempt_at = None
+        if _active and _sched:
+            _next_attempt_at = (
+                self.timestamp + timedelta(minutes=_sched.attempt_interval_minutes)
+            ).isoformat() + 'Z'
         return {
             'id': self.id,
             'client_id':    self.client_id,
@@ -333,5 +340,6 @@ class CallLog(db.Model):
             'status': self.status,
             'keypress_received': self.keypress_received,
             'timestamp': self.timestamp.isoformat() + 'Z',
+            'next_attempt_at': _next_attempt_at,
             'notes': self.notes,
         }

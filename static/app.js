@@ -211,20 +211,19 @@ async function loadDashboard() {
 
     const tbody = document.getElementById('logTable');
     if (!d.recent_logs.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">No calls today.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No calls today.</td></tr>';
     } else {
       tbody.innerHTML = d.recent_logs.map(l => {
-        const schedCell = l.schedule_time
-          ? `${fmtScheduleTime(l.schedule_time)}${l.schedule_name ? `<br><small style="color:var(--muted)">${esc(l.schedule_name)}</small>` : ''}`
+        const nextAttempt = l.next_attempt_at
+          ? `<span style="white-space:nowrap">${fmtTime(l.next_attempt_at)}</span>`
           : '—';
         return `<tr>
-          <td style="white-space:nowrap">${fmtTime(l.timestamp)}</td>
           <td>${esc(l.client_name)}</td>
-          <td style="white-space:nowrap">${schedCell}</td>
+          <td>${esc(l.schedule_name || '—')}</td>
+          <td style="white-space:nowrap;font-weight:600">${l.schedule_time ? fmtScheduleTime(l.schedule_time) : '—'}</td>
+          <td>${nextAttempt}</td>
           <td>${typeBadge(l.call_type)}</td>
           <td>#${l.attempt_number}</td>
-          <td>${statusBadge(l.status)}</td>
-          <td>${sessionStatusBadge(l.session_status)}</td>
         </tr>`;
       }).join('');
     }
