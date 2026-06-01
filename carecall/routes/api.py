@@ -143,6 +143,98 @@ def get_schedules():
     return jsonify([s.to_dict() for s in schedules])
 
 
+@api_bp.route('/schedules/completions', methods=['GET'])
+def schedule_completions():
+    """Return schedule IDs that have a completed session on the given local date."""
+    from datetime import datetime, date as _date, timedelta
+    date_str = request.args.get('date')
+    try:
+        target_date = _date.fromisoformat(date_str) if date_str else _date.today()
+    except ValueError:
+        return jsonify({'completed_ids': []}), 400
+
+    _local_now  = datetime.now()
+    _utc_now    = datetime.utcnow()
+    _utc_offset = _utc_now - _local_now
+    day_start   = datetime.combine(target_date, datetime.min.time()) + _utc_offset
+    day_end     = day_start + timedelta(days=1)
+
+    done_wellness = {
+        ws.schedule_id
+        for ws in WellnessSession.query.filter(
+            WellnessSession.started_at >= day_start,
+            WellnessSession.started_at <  day_end,
+            WellnessSession.status.in_(['acknowledged', 'escalated', 'admin_ok']),
+        ).all()
+        if ws.schedule_id
+    }
+    done_reminder = {
+        rs.schedule_id
+        for rs in ReminderSession.query.filter(
+            ReminderSession.started_at >= day_start,
+            ReminderSession.started_at <  day_end,
+            ReminderSession.status.in_(['reached_human', 'left_voicemail', 'admin_ok']),
+        ).all()
+        if rs.schedule_id
+    }
+    return jsonify({'completed_ids': list(done_wellness | done_reminder)})
+
+
+@api_bp.route('/schedules/<int:schedule_id>/admin-ok', methods=['POST'])
+def schedule_admin_ok(schedule_id):
+    """Administratively mark a schedule's call as complete for a given date."""
+    from datetime import datetime
+    sched = db.get_or_404(Schedule, schedule_id)
+    now   = datetime.utcnow()
+
+    if sched.call_type == 'wellness':
+        session = WellnessSession(
+            schedule_id=schedule_id,
+            client_id=sched.client_id,
+            status='admin_ok',
+            current_attempt=0,
+            started_at=now,
+            resolved_at=now,
+        )
+        db.session.add(session)
+        db.session.flush()
+        log = CallLog(
+            schedule_id=schedule_id,
+            client_id=sched.client_id,
+            wellness_session_id=session.id,
+            call_type='wellness',
+            attempt_number=0,
+            status='admin_ok',
+            timestamp=now,
+            notes='Admin OK',
+        )
+    else:
+        session = ReminderSession(
+            schedule_id=schedule_id,
+            client_id=sched.client_id,
+            status='admin_ok',
+            current_attempt=0,
+            started_at=now,
+            resolved_at=now,
+        )
+        db.session.add(session)
+        db.session.flush()
+        log = CallLog(
+            schedule_id=schedule_id,
+            client_id=sched.client_id,
+            reminder_session_id=session.id,
+            call_type='reminder',
+            attempt_number=0,
+            status='admin_ok',
+            timestamp=now,
+            notes='Admin OK',
+        )
+
+    db.session.add(log)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @api_bp.route('/schedules', methods=['POST'])
 def create_schedule():
     from carecall.scheduler import activate_schedule
@@ -487,7 +579,7 @@ def dashboard():
     active_reminder_schedules  = Schedule.query.filter_by(active=True, call_type='reminder').count()
     reminder_completed_today   = ReminderSession.query.filter(
         ReminderSession.started_at >= today_start,
-        ReminderSession.status.in_(['reached_human', 'left_voicemail']),
+        ReminderSession.status.in_(['reached_human', 'left_voicemail', 'admin_ok']),
     ).count()
     reminder_calls_today = CallLog.query.filter(
         CallLog.timestamp >= today_start,
@@ -498,7 +590,7 @@ def dashboard():
     active_wellness_schedules = Schedule.query.filter_by(active=True, call_type='wellness').count()
     wellness_completed_today  = WellnessSession.query.filter(
         WellnessSession.started_at >= today_start,
-        WellnessSession.status.in_(['acknowledged', 'escalated']),
+        WellnessSession.status.in_(['acknowledged', 'escalated', 'admin_ok']),
     ).count()
     wellness_calls_today = CallLog.query.filter(
         CallLog.timestamp >= today_start,

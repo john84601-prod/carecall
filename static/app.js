@@ -905,21 +905,20 @@ async function loadSchedules() {
   }
 }
 
-function _renderSchedules() {
-  const tbody  = document.getElementById('schedulesTable');
-  const picker = document.getElementById('schedDate');
+async function _renderSchedules() {
+  const tbody   = document.getElementById('schedulesTable');
+  const picker  = document.getElementById('schedDate');
   const dateStr = picker ? picker.value : _todayStr();
 
   if (!_schedAllSchedules.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
     return;
   }
 
   // Convert selected date → APScheduler day-of-week (0=Mon … 6=Sun)
-  // JS Date.getDay() is 0=Sun…6=Sat; shift: (jsDay + 6) % 7
   const [y, m, d] = dateStr.split('-').map(Number);
-  const jsDay    = new Date(y, m - 1, d).getDay();
-  const apDay    = String((jsDay + 6) % 7);
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const apDay = String((jsDay + 6) % 7);
 
   const filtered = _schedAllSchedules.filter(s => {
     const dow = (s.days_of_week || '').split(',').map(x => x.trim());
@@ -928,21 +927,56 @@ function _renderSchedules() {
 
   if (!filtered.length) {
     const label = dateStr === _todayStr() ? 'today' : 'the selected date';
-    tbody.innerHTML = `<tr><td colspan="5" class="empty">No calls scheduled for ${label}.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">No calls scheduled for ${label}.</td></tr>`;
     return;
   }
 
-  // Sort by time_of_day ascending
+  // Fetch completions only for today or past dates (future = no OK button)
+  let completedIds = new Set();
+  const isPastOrToday = dateStr <= _todayStr();
+  if (isPastOrToday) {
+    try {
+      const res = await api('GET', `/schedules/completions?date=${dateStr}`);
+      completedIds = new Set(res.completed_ids || []);
+    } catch (_) { /* non-fatal — just show buttons without completion state */ }
+  }
+
   filtered.sort((a, b) => (a.time_of_day || '').localeCompare(b.time_of_day || ''));
 
-  tbody.innerHTML = filtered.map(s => `
-    <tr>
+  tbody.innerHTML = filtered.map(s => {
+    let actionCell = '';
+    if (isPastOrToday) {
+      if (completedIds.has(s.id)) {
+        actionCell = '<span class="admin-ok-badge">✓ Admin OK</span>';
+      } else {
+        actionCell = `<button class="btn-ok btn-sm"
+          onclick="schedAdminOk(${s.id}, '${esc(s.client_name)}', '${esc(s.name || s.call_type)}', '${dateStr}')">
+          ✓ OK</button>`;
+      }
+    }
+    return `<tr>
       <td>${esc(s.client_name)}</td>
       <td style="white-space:nowrap;font-weight:600">${fmt12h(s.time_of_day)}</td>
       <td>${esc(s.name || '—')}</td>
       <td>${typeBadge(s.call_type)}</td>
       <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
-    </tr>`).join('');
+      <td style="text-align:right">${actionCell}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function schedAdminOk(scheduleId, clientName, callName, dateStr) {
+  const label = dateStr === _todayStr() ? 'today' : dateStr;
+  const msg   = `Mark "${callName}" for ${clientName} as Admin OK for ${label}?\n\nThis will record the call as administratively completed.`;
+  if (!confirm(msg)) return;
+
+  try {
+    await api('POST', `/schedules/${scheduleId}/admin-ok`, { date: dateStr });
+    toast(`Admin OK recorded for ${clientName}`, 'success');
+    _renderSchedules();
+  } catch (e) {
+    toast(e.message || 'Failed to record Admin OK', 'error');
+  }
 }
 
 function schedShiftDay(delta) {

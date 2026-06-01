@@ -237,6 +237,9 @@ tr:hover td { background: #f8fafc; }
 
 .btn-danger { background: #fdecea; color: var(--red); border: none; border-radius: var(--radius); cursor: pointer; font-size: .8rem; padding: .3rem .7rem; }
 .btn-danger:hover { background: #f5c6c3; }
+.btn-ok { background: #e8f8f0; color: var(--green); border: 1px solid #a8d8b9; border-radius: var(--radius); cursor: pointer; font-size: .8rem; font-weight: 600; padding: .3rem .7rem; white-space: nowrap; }
+.btn-ok:hover { background: #c8eedd; }
+.admin-ok-badge { color: var(--green); font-size: .8rem; font-weight: 600; white-space: nowrap; }
 .btn-edit   { background: #e8f4fb; color: var(--teal); border: none; border-radius: var(--radius); cursor: pointer; font-size: .8rem; padding: .3rem .7rem; }
 .btn-edit:hover { background: #c8e6f5; }
 
