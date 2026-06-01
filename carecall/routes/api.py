@@ -594,12 +594,17 @@ def dashboard():
         CallLog.call_type == 'wellness',
     ).count()
 
-    # Alert cycles today = distinct wellness sessions where an emergency call was made today
+    # Alert cycles today = distinct wellness sessions that STARTED today and
+    # escalated to emergency contacts.  Filtering on session.started_at (not
+    # call log timestamp) prevents runaway post-midnight calls from a previous
+    # night's session inflating today's count.
     alert_cycles_today = db.session.query(
         func.count(sa_distinct(CallLog.wellness_session_id))
+    ).join(
+        WellnessSession, CallLog.wellness_session_id == WellnessSession.id
     ).filter(
         CallLog.call_type == 'emergency',
-        CallLog.timestamp >= today_start,
+        WellnessSession.started_at >= today_start,
     ).scalar() or 0
 
     # Active/in-progress sessions
