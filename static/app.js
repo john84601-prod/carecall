@@ -895,19 +895,16 @@ async function loadSchedules() {
     const schedules = await api('GET', '/schedules');
     const tbody = document.getElementById('schedulesTable');
     if (!schedules.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No schedules yet. Open a client profile to add one.</td></tr>';
       return;
     }
     tbody.innerHTML = schedules.map(s => `
       <tr>
-        <td>${esc(s.name || '—')}</td>
         <td>${esc(s.client_name)}</td>
-        <td>${typeBadge(s.call_type)}</td>
         <td style="white-space:nowrap;font-weight:600">${fmt12h(s.time_of_day)}</td>
+        <td>${esc(s.name || '—')}</td>
+        <td>${typeBadge(s.call_type)}</td>
         <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
-        <td>${s.active
-          ? '<span class="badge badge-green">Active</span>'
-          : '<span class="badge badge-gray">Inactive</span>'}</td>
       </tr>`).join('');
   } catch (e) {
     toast(e.message, 'error');
