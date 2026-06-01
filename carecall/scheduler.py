@@ -100,9 +100,27 @@ def _rollover_active_sessions():
         for session in active:
             session.status = 'failed'
             session.resolved_at = now
+            _cancel_session_jobs(session.id)   # remove any queued retry/escalation jobs
         if active:
             db.session.commit()
             logger.info(f"Midnight rollover: closed {len(active)} active wellness session(s)")
+
+
+def _cancel_session_jobs(session_id):
+    """Remove all pending APScheduler jobs associated with a wellness session."""
+    if not _scheduler:
+        return
+    prefixes = (
+        f"wellness_retry_{session_id}_",
+        f"emergency_next_{session_id}_",
+    )
+    for job in list(_scheduler.get_jobs()):
+        if any(job.id.startswith(p) for p in prefixes):
+            try:
+                job.remove()
+                logger.info(f"Midnight rollover: cancelled queued job {job.id}")
+            except Exception:
+                pass
 
 
 # ── Startup missed-call audit ─────────────────────────────────────────────────
@@ -397,7 +415,7 @@ def _attempt_wellness_call(session_id):
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
-        if not session or session.status == 'cancelled':
+        if not session or session.status in ('cancelled', 'failed'):
             return
 
         session.current_attempt += 1
@@ -478,7 +496,7 @@ def _call_next_emergency_contact(session_id):
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
-        if not session or session.status == 'cancelled':
+        if not session or session.status in ('cancelled', 'failed'):
             return
 
         already_called = session.get_contacts_called()
@@ -558,7 +576,7 @@ def handle_emergency_no_response(session_id, contact_id):
         from carecall.models import WellnessSession, EmergencyContact, ScheduleContact, db
 
         session = db.session.get(WellnessSession, session_id)
-        if not session or session.emergency_acknowledged or session.status == 'cancelled':
+        if not session or session.emergency_acknowledged or session.status in ('cancelled', 'failed'):
             return
 
         already_called = set(session.get_contacts_called())
