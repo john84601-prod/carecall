@@ -995,21 +995,34 @@ async function loadClientSchedules(clientId) {
   }
 }
 
-function renderClientSchedules(schedules) {
+async function renderClientSchedules(schedules) {
   const el = document.getElementById('clientSchedulesList');
   if (!schedules.length) {
     el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:.4rem 0">No call schedules yet.</div>';
     return;
   }
+
+  // Fetch today's statuses for these schedules
+  let schedStatuses = {};
+  try {
+    const res = await api('GET', `/schedules/completions?date=${_todayStr()}`);
+    schedStatuses = res.statuses || {};
+  } catch (_) { /* non-fatal */ }
+
   el.innerHTML = schedules.map(s => {
-    const title = s.name || (s.call_type === 'reminder' ? 'Reminder' : 'Wellness Check');
-    const meta = [fmt12h(s.time_of_day), fmtDays(s.days_of_week)].join(' · ');
+    const title  = s.name || (s.call_type === 'reminder' ? 'Reminder' : 'Wellness Check');
+    const meta   = [fmt12h(s.time_of_day), fmtDays(s.days_of_week)].join(' · ');
+    const status = schedStatuses[s.id];
+    const statusHtml = status
+      ? `<div style="display:flex;align-items:center">${schedStatusBadge(status)}</div>`
+      : '';
     return `
       <div class="schedule-item">
         <div class="schedule-item-info">
           <div class="schedule-item-title">${esc(title)} ${typeBadge(s.call_type)}</div>
           <div class="schedule-item-meta">${meta}</div>
         </div>
+        ${statusHtml}
         <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.8rem;color:var(--muted);white-space:nowrap">
           <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''}
             onchange="toggleClientSchedule(${s.id}, this.checked, this.closest('label').querySelector('.sched-active-lbl'))">
