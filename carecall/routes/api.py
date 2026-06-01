@@ -145,13 +145,13 @@ def get_schedules():
 
 @api_bp.route('/schedules/completions', methods=['GET'])
 def schedule_completions():
-    """Return schedule IDs that have a completed session on the given local date."""
+    """Return {schedule_id: status} for every session on the given local date."""
     from datetime import datetime, date as _date, timedelta
     date_str = request.args.get('date')
     try:
         target_date = _date.fromisoformat(date_str) if date_str else _date.today()
     except ValueError:
-        return jsonify({'completed_ids': []}), 400
+        return jsonify({'statuses': {}}), 400
 
     _local_now  = datetime.now()
     _utc_now    = datetime.utcnow()
@@ -159,25 +159,22 @@ def schedule_completions():
     day_start   = datetime.combine(target_date, datetime.min.time()) + _utc_offset
     day_end     = day_start + timedelta(days=1)
 
-    done_wellness = {
-        ws.schedule_id
-        for ws in WellnessSession.query.filter(
-            WellnessSession.started_at >= day_start,
-            WellnessSession.started_at <  day_end,
-            WellnessSession.status.in_(['acknowledged', 'escalated', 'admin_ok']),
-        ).all()
-        if ws.schedule_id
-    }
-    done_reminder = {
-        rs.schedule_id
-        for rs in ReminderSession.query.filter(
-            ReminderSession.started_at >= day_start,
-            ReminderSession.started_at <  day_end,
-            ReminderSession.status.in_(['reached_human', 'left_voicemail', 'admin_ok']),
-        ).all()
-        if rs.schedule_id
-    }
-    return jsonify({'completed_ids': list(done_wellness | done_reminder)})
+    statuses = {}
+    for ws in WellnessSession.query.filter(
+        WellnessSession.started_at >= day_start,
+        WellnessSession.started_at <  day_end,
+    ).all():
+        if ws.schedule_id:
+            statuses[ws.schedule_id] = ws.status
+
+    for rs in ReminderSession.query.filter(
+        ReminderSession.started_at >= day_start,
+        ReminderSession.started_at <  day_end,
+    ).all():
+        if rs.schedule_id:
+            statuses[rs.schedule_id] = rs.status
+
+    return jsonify({'statuses': statuses})
 
 
 @api_bp.route('/schedules/<int:schedule_id>/admin-ok', methods=['POST'])

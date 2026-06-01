@@ -931,28 +931,27 @@ async function _renderSchedules() {
     return;
   }
 
-  // Fetch completions only for today or past dates (future = no OK button)
-  let completedIds = new Set();
+  // Fetch session statuses for today/past dates
+  let schedStatuses = {};
   const isPastOrToday = dateStr <= _todayStr();
   if (isPastOrToday) {
     try {
       const res = await api('GET', `/schedules/completions?date=${dateStr}`);
-      completedIds = new Set(res.completed_ids || []);
-    } catch (_) { /* non-fatal — just show buttons without completion state */ }
+      schedStatuses = res.statuses || {};
+    } catch (_) { /* non-fatal */ }
   }
 
   filtered.sort((a, b) => (a.time_of_day || '').localeCompare(b.time_of_day || ''));
 
   tbody.innerHTML = filtered.map(s => {
-    let actionCell = '';
-    if (isPastOrToday) {
-      if (completedIds.has(s.id)) {
-        actionCell = '<span class="admin-ok-badge">✓ Admin OK</span>';
-      } else {
-        actionCell = `<button class="btn-ok btn-sm"
-          onclick="schedAdminOk(${s.id}, '${esc(s.client_name)}', '${esc(s.name || s.call_type)}', '${dateStr}')">
-          ✓ OK</button>`;
-      }
+    let statusCell = '';
+    const status = schedStatuses[s.id];
+    if (status) {
+      statusCell = schedStatusBadge(status);
+    } else if (isPastOrToday) {
+      statusCell = `<button class="btn-ok btn-sm"
+        onclick="schedAdminOk(${s.id}, '${esc(s.client_name)}', '${esc(s.name || s.call_type)}', '${dateStr}')">
+        ✓ OK</button>`;
     }
     return `<tr>
       <td>${esc(s.client_name)}</td>
@@ -960,7 +959,7 @@ async function _renderSchedules() {
       <td>${esc(s.name || '—')}</td>
       <td>${typeBadge(s.call_type)}</td>
       <td style="white-space:nowrap">${fmtDays(s.days_of_week)}</td>
-      <td style="text-align:right">${actionCell}</td>
+      <td style="text-align:right">${statusCell}</td>
     </tr>`;
   }).join('');
 }
@@ -2007,6 +2006,22 @@ function sessionStatusBadge(s) {
   };
   if (!s) return '<span class="badge badge-gray">—</span>';
   const [cls, label] = map[s] || ['badge-gray', s];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function schedStatusBadge(status) {
+  const map = {
+    admin_ok:      ['badge-green',  'Admin OK'],
+    acknowledged:  ['badge-green',  'Acknowledged'],
+    escalated:     ['badge-orange', 'Escalated'],
+    reached_human: ['badge-green',  'Reached'],
+    left_voicemail:['badge-blue',   'Voicemail'],
+    failed:        ['badge-red',    'Failed'],
+    pending:       ['badge-gray',   'Pending'],
+    calling:       ['badge-blue',   'Calling…'],
+    escalating:    ['badge-orange', 'Escalating'],
+  };
+  const [cls, label] = map[status] || ['badge-gray', status];
   return `<span class="badge ${cls}">${label}</span>`;
 }
 
