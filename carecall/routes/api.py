@@ -468,7 +468,7 @@ def get_reminder_sessions():
 
 @api_bp.route('/dashboard', methods=['GET'])
 def dashboard():
-    from datetime import datetime, date as _date
+    from datetime import datetime, date as _date, timedelta
     from sqlalchemy import func, distinct as sa_distinct
 
     # Use local calendar day (not UTC) so "today" matches the server's clock.
@@ -521,9 +521,82 @@ def dashboard():
         ReminderSession.status.in_(['pending', 'calling'])
     ).order_by(ReminderSession.started_at.desc()).all()
 
-    recent_logs = CallLog.query.filter(
-        CallLog.timestamp >= today_start
-    ).order_by(CallLog.timestamp.desc()).all()
+    # ── Upcoming calls: scheduled slots for today + active retry sessions ────
+    _local_time_str = _local_now.strftime('%H:%M')
+    today_dow       = str(_local_now.weekday())   # '0'=Mon .. '6'=Sun
+
+    # Schedule IDs already running in an active session (exclude from plain slots)
+    _active_sched_ids = {
+        ws.schedule_id for ws in WellnessSession.query.filter(
+            WellnessSession.status.in_(['pending', 'calling', 'escalating'])
+        ).all()
+    } | {
+        rs.schedule_id for rs in ReminderSession.query.filter(
+            ReminderSession.status.in_(['pending', 'calling'])
+        ).all()
+    }
+
+    upcoming_calls = []
+
+    # 1. Scheduled slots not yet fired today
+    for s in Schedule.query.filter_by(active=True).all():
+        dow_list = [d.strip() for d in (s.days_of_week or '').split(',')]
+        if today_dow not in dow_list:
+            continue
+        if s.time_of_day <= _local_time_str:
+            continue
+        if s.id in _active_sched_ids:
+            continue
+        upcoming_calls.append({
+            'client_name':     s.client.full_name if s.client else '',
+            'schedule_name':   s.name or '',
+            'schedule_time':   s.time_of_day,
+            'next_attempt_at': s.time_of_day,
+            'call_type':       s.call_type,
+            'attempt_number':  None,
+        })
+
+    # 2. Active wellness retry sessions
+    for ws in WellnessSession.query.filter(
+        WellnessSession.status.in_(['pending', 'calling', 'escalating'])
+    ).all():
+        last_log = (CallLog.query
+                    .filter_by(wellness_session_id=ws.id)
+                    .order_by(CallLog.timestamp.desc())
+                    .first())
+        sched = ws.schedule
+        if last_log and sched:
+            next_local = last_log.timestamp + timedelta(minutes=sched.attempt_interval_minutes) - _utc_offset
+            upcoming_calls.append({
+                'client_name':     ws.client.full_name if ws.client else '',
+                'schedule_name':   sched.name or '',
+                'schedule_time':   sched.time_of_day,
+                'next_attempt_at': next_local.strftime('%H:%M'),
+                'call_type':       'wellness',
+                'attempt_number':  ws.current_attempt + 1,
+            })
+
+    # 3. Active reminder retry sessions
+    for rs in ReminderSession.query.filter(
+        ReminderSession.status.in_(['pending', 'calling'])
+    ).all():
+        last_log = (CallLog.query
+                    .filter_by(reminder_session_id=rs.id)
+                    .order_by(CallLog.timestamp.desc())
+                    .first())
+        sched = rs.schedule
+        if last_log and sched:
+            next_local = last_log.timestamp + timedelta(minutes=sched.attempt_interval_minutes) - _utc_offset
+            upcoming_calls.append({
+                'client_name':     rs.client.full_name if rs.client else '',
+                'schedule_name':   sched.name or '',
+                'schedule_time':   sched.time_of_day,
+                'next_attempt_at': next_local.strftime('%H:%M'),
+                'call_type':       'reminder',
+                'attempt_number':  rs.current_attempt + 1,
+            })
+
+    upcoming_calls.sort(key=lambda x: x['next_attempt_at'])
 
     # Wellness alert cycles: only sessions that escalated to emergency contacts today.
     # A session qualifies if at least one emergency call was placed for it.
@@ -564,7 +637,7 @@ def dashboard():
         'active_reminder_sessions': len(active_reminder_sessions_qs),
         'active_reminder_sessions_list': [s.to_dict() for s in active_reminder_sessions_qs],
         # Detail panels
-        'recent_logs':     [l.to_dict() for l in recent_logs],
+        'upcoming_calls':  upcoming_calls,
         'recent_sessions': [s.to_dict() for s in recent_sessions],
     })
 

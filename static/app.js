@@ -210,20 +210,22 @@ async function loadDashboard() {
     }
 
     const tbody = document.getElementById('logTable');
-    if (!d.recent_logs.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">No calls today.</td></tr>';
+    if (!d.upcoming_calls || !d.upcoming_calls.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No more calls scheduled for today.</td></tr>';
     } else {
-      tbody.innerHTML = d.recent_logs.map(l => {
-        const nextAttempt = l.next_attempt_at
-          ? `<span style="white-space:nowrap">${fmtTime(l.next_attempt_at)}</span>`
+      tbody.innerHTML = d.upcoming_calls.map(l => {
+        const scheduledSameAsNext = l.schedule_time === l.next_attempt_at;
+        const nextCell = l.next_attempt_at
+          ? `<span style="white-space:nowrap">${fmtScheduleTime(l.next_attempt_at)}</span>`
           : '—';
+        const attemptCell = l.attempt_number != null ? `#${l.attempt_number}` : '—';
         return `<tr>
           <td>${esc(l.client_name)}</td>
           <td>${esc(l.schedule_name || '—')}</td>
           <td style="white-space:nowrap;font-weight:600">${l.schedule_time ? fmtScheduleTime(l.schedule_time) : '—'}</td>
-          <td>${nextAttempt}</td>
+          <td>${scheduledSameAsNext ? '—' : nextCell}</td>
           <td>${typeBadge(l.call_type)}</td>
-          <td>#${l.attempt_number}</td>
+          <td>${attemptCell}</td>
         </tr>`;
       }).join('');
     }
