@@ -919,6 +919,26 @@ def test_call():
         return jsonify({'error': str(e)}), 500
 
 
+@api_bp.route('/test-sms', methods=['POST'])
+def test_sms():
+    from carecall.twilio_client import send_sms
+    data = request.get_json()
+    to   = _normalize_phone((data or {}).get('to', ''))
+    name = (data or {}).get('name', 'this contact')
+    if not to:
+        return jsonify({'error': 'Phone number required'}), 400
+    try:
+        body = (
+            f"CareCall test message for {name}. "
+            f"If you receive this, SMS alerts are working correctly. "
+            f"During a real alert you can reply OK to acknowledge."
+        )
+        sid = send_sms(f"+1{to}" if not to.startswith('+') else to, body)
+        return jsonify({'success': True, 'message_sid': sid})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _normalize_phone(raw):

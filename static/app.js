@@ -715,6 +715,7 @@ function showContactModal() {
   document.getElementById('contactRelationship').value = '';
   document.getElementById('contactPriority').value = 1;
   document.getElementById('contactCanText').checked = false;
+  document.getElementById('contactSmsResult').innerHTML = '';
   openOverlay('contactOverlay');
 }
 
@@ -1559,6 +1560,31 @@ async function checkForUpdates() {
     _renderVersionInfo(v, status);
   } catch (e) {
     _renderVersionInfo(v, 'error');
+  }
+}
+
+async function sendTestSms() {
+  const to     = document.getElementById('contactPhone').value.trim();
+  const name   = document.getElementById('contactName').value.trim() || 'this contact';
+  const result = document.getElementById('contactSmsResult');
+  result.innerHTML = '';
+  if (!to) {
+    result.innerHTML = `<div class="info-box" style="background:#fdecea;border-color:#f5c6c3;color:#7b1f1a">Enter a phone number first.</div>`;
+    return;
+  }
+  const btn = event.currentTarget;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const r = await api('POST', '/test-sms', { to, name });
+    result.innerHTML = `<div class="info-box" style="background:#e8f8f0;border-color:#a8d8b9;color:#1a5e2f">
+      Test text sent! SID: <code>${esc(r.message_sid)}</code></div>`;
+  } catch (e) {
+    result.innerHTML = `<div class="info-box" style="background:#fdecea;border-color:#f5c6c3;color:#7b1f1a">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
   }
 }
 
