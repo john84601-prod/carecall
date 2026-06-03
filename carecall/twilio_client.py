@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from twilio.rest import Client
 
@@ -20,6 +21,43 @@ def get_from_number():
     if not num:
         raise RuntimeError("TWILIO_FROM_NUMBER must be set in .env")
     return num
+
+
+def normalize_phone(phone):
+    """Strip all non-digit characters and return the last 10 digits.
+    Used to match Twilio E.164 numbers against locally-formatted DB numbers.
+    """
+    digits = re.sub(r'\D', '', phone or '')
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def send_sms(to_number, body):
+    """Send an outbound SMS. Returns the Twilio message SID."""
+    client = get_client()
+    msg = client.messages.create(
+        to=to_number,
+        from_=get_from_number(),
+        body=body,
+    )
+    logger.info(f"SMS sent to {to_number} — SID: {msg.sid}")
+    return msg.sid
+
+
+def register_sms_webhook(sms_url):
+    """Update the Twilio phone number's inbound SMS webhook to sms_url.
+    Called at startup so the dynamic ngrok/public URL is always current.
+    """
+    try:
+        client     = get_client()
+        from_num   = get_from_number()
+        numbers    = client.incoming_phone_numbers.list(phone_number=from_num)
+        if not numbers:
+            logger.warning(f"register_sms_webhook: number {from_num} not found in account")
+            return
+        numbers[0].update(sms_url=sms_url, sms_method='POST')
+        logger.info(f"SMS webhook registered: {sms_url}")
+    except Exception as e:
+        logger.warning(f"register_sms_webhook failed (non-fatal): {e}")
 
 
 def make_call(to_number, answer_url, status_callback_url,

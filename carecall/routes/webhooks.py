@@ -6,9 +6,11 @@ from threading import Thread
 from flask import Blueprint, request, Response
 from twilio.request_validator import RequestValidator
 from twilio.twiml.voice_response import VoiceResponse, Gather
+from twilio.twiml.messaging_response import MessagingResponse
 
 from carecall import db
 from carecall.models import CallLog, WellnessSession, EmergencyContact
+from carecall.twilio_client import normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +397,98 @@ def call_status():
             t.start()
 
     return '', 204
+
+
+# ── Inbound SMS reply (emergency contact acknowledgment) ───────────────────────
+
+_SMS_ACK_KEYWORDS = {'ok', 'yes', '1', 'ack', 'acknowledge', 'confirmed', 'confirm'}
+
+@webhooks_bp.route('/sms-reply', methods=['POST'])
+def sms_reply():
+    """Twilio posts here when an emergency contact replies to an alert SMS.
+
+    Matches the sender's phone number to an emergency contact, finds any open
+    WellnessSession where that contact has been called, and acknowledges it if
+    the reply body is a recognised acknowledgment keyword.
+    """
+    from_raw = request.form.get('From', '')
+    body     = request.form.get('Body', '').strip().lower()
+    from_norm = normalize_phone(from_raw)
+
+    mr = MessagingResponse()
+
+    # Find all emergency contacts whose normalized phone matches the sender
+    all_contacts = EmergencyContact.query.all()
+    matching = [c for c in all_contacts if normalize_phone(c.phone) == from_norm]
+
+    if not matching:
+        logger.info(f"SMS reply from unknown number {from_raw} — no matching emergency contact")
+        mr.message("CareCall: Your number is not registered as an emergency contact. No action taken.")
+        return Response(str(mr), mimetype='text/xml')
+
+    # Find an open WellnessSession where one of these contacts has been called
+    open_sessions = WellnessSession.query.filter(
+        WellnessSession.status.in_(['escalating'])
+    ).all()
+
+    target_session = None
+    target_contact = None
+    for contact in matching:
+        for sess in open_sessions:
+            if contact.id in sess.get_contacts_called():
+                target_session = sess
+                target_contact = contact
+                break
+        if target_session:
+            break
+
+    if not target_session:
+        # Check if a recently-resolved session exists (acknowledged by call in the meantime)
+        logger.info(f"SMS reply from {from_raw} — no open session found for this contact")
+        mr.message("CareCall: No active wellness alert found for your number. It may have already been resolved.")
+        return Response(str(mr), mimetype='text/xml')
+
+    # Check for acknowledgment keyword
+    if not any(kw in body for kw in _SMS_ACK_KEYWORDS):
+        client_name = target_session.client.full_name if target_session.client else 'the client'
+        mr.message(
+            f"CareCall: Active alert for {client_name}. "
+            f"Reply OK to confirm you will follow up immediately."
+        )
+        return Response(str(mr), mimetype='text/xml')
+
+    # Acknowledge the session
+    now = datetime.utcnow()
+    target_session.emergency_acknowledged = True
+    target_session.acknowledged_by_contact_id = target_contact.id
+    target_session.status    = 'escalated'
+    target_session.resolved_at = now
+
+    # Log the SMS acknowledgment
+    log = CallLog(
+        schedule_id         = target_session.schedule_id,
+        client_id           = target_session.client_id,
+        wellness_session_id = target_session.id,
+        emergency_contact_id= target_contact.id,
+        call_type           = 'emergency',
+        attempt_number      = 0,
+        status              = 'acknowledged',
+        timestamp           = now,
+        notes               = f'Acknowledged via SMS reply from {from_raw}',
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    client_name = target_session.client.full_name if target_session.client else 'the client'
+    logger.info(
+        f"Session {target_session.id} acknowledged via SMS by "
+        f"{target_contact.name} ({from_raw})"
+    )
+    mr.message(
+        f"CareCall: Thank you {target_contact.name}. Your acknowledgment for "
+        f"{client_name} has been recorded. Please follow up immediately."
+    )
+    return Response(str(mr), mimetype='text/xml')
 
 
 # ── Test TwiML endpoint ────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ def init_scheduler(app):
 
     _register_midnight_rollover()
     _startup_missed_call_check()
+    _register_sms_webhook()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -75,6 +76,17 @@ def deactivate_schedule(schedule_id):
 
 
 # ── Midnight rollover ─────────────────────────────────────────────────────────
+
+def _register_sms_webhook():
+    """Point the Twilio number's SMS webhook at our /webhook/sms-reply route."""
+    try:
+        from carecall.tunnel import get_public_url
+        from carecall.twilio_client import register_sms_webhook
+        url = get_public_url()
+        register_sms_webhook(f"{url}/webhook/sms-reply")
+    except Exception as e:
+        logger.warning(f"Could not register SMS webhook at startup (non-fatal): {e}")
+
 
 def _register_midnight_rollover():
     """Register a daily cron job that closes any still-active wellness sessions at midnight."""
@@ -561,6 +573,22 @@ def _call_next_emergency_contact(session_id):
             log.notes = str(e)
             logger.error(f"Emergency call to {next_contact.id} failed: {e}")
             _schedule_next_emergency(session_id, _emergency_interval())
+
+        # Also send an SMS if this contact has can_text enabled
+        if next_contact.can_text:
+            try:
+                from carecall.twilio_client import send_sms
+                client_name = session.client.full_name if session.client else 'Your client'
+                sms_body = (
+                    f"URGENT – CareCall Alert: {client_name} has not responded to "
+                    f"{session.current_attempt} wellness check call(s). "
+                    f"Reply OK to acknowledge you will follow up. "
+                    f"Reply STOP to unsubscribe."
+                )
+                send_sms(next_contact.phone, sms_body)
+                logger.info(f"Session {session_id}: SMS alert sent to {next_contact.name}")
+            except Exception as sms_err:
+                logger.warning(f"Session {session_id}: SMS to {next_contact.name} failed (non-fatal): {sms_err}")
 
         db.session.commit()
 
