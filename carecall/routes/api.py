@@ -1044,23 +1044,42 @@ def backup_format():
             err = (result.stderr or result.stdout or 'Format failed').strip()
             return jsonify({'error': err}), 500
 
-        # Re-mount via udisksctl (works without sudo on Pi, respects udev automount rules)
-        mount_result = subprocess.run(
+        # Let udev finish processing the new filesystem signature before mounting
+        subprocess.run(['udevadm', 'settle'], capture_output=True, timeout=10)
+
+        mountpoint = None
+        mount_log = []
+
+        # ── Attempt 1: udisksctl (no sudo needed, auto-picks mount point) ──
+        r1 = subprocess.run(
             ['udisksctl', 'mount', '-b', device],
             capture_output=True, text=True, timeout=15
         )
-        mountpoint = None
-        if mount_result.returncode == 0:
-            # Output is like: "Mounted /dev/sdb1 at /media/pi/CareCallBak"
-            import re as _re
-            m = _re.search(r'at\s+(\S+)', mount_result.stdout)
+        mount_log.append(f'udisksctl: rc={r1.returncode} {(r1.stdout or r1.stderr or "").strip()}')
+        if r1.returncode == 0:
+            m = re.search(r'at\s+(\S+)', r1.stdout)
             if m:
                 mountpoint = m.group(1).rstrip('.')
+
+        # ── Attempt 2: sudo mount to /media/pi/<label> ──────────────────────
+        if not mountpoint:
+            import getpass
+            user = getpass.getuser()
+            mp = f'/media/{user}/{label}'
+            os.makedirs(mp, exist_ok=True)
+            r2 = subprocess.run(
+                ['sudo', 'mount', '-t', 'exfat', device, mp],
+                capture_output=True, text=True, timeout=15
+            )
+            mount_log.append(f'sudo mount: rc={r2.returncode} {(r2.stderr or r2.stdout or "").strip()}')
+            if r2.returncode == 0:
+                mountpoint = mp
 
         return jsonify({
             'success':    True,
             'message':    f'{device} formatted as exFAT (label: {label})',
             'mountpoint': mountpoint,
+            'mount_log':  mount_log,   # visible in browser console for debugging
         })
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Format timed out after 2 minutes'}), 500

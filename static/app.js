@@ -2472,6 +2472,7 @@ async function _doFormatDrive(device, label) {
       note.textContent = `Format failed: ${data.error}`;
       toast(`Format failed: ${data.error}`, 'error');
     } else {
+      if (data.mount_log) console.log('Mount attempts:', data.mount_log);
       const mp = data.mountpoint;
       note.textContent = mp
         ? `Format complete — mounted at ${mp}`
