@@ -1558,7 +1558,7 @@ function renderMessages() {
       ${m.recording_sid ? `
       <audio controls preload="none" style="width:100%;margin:.5rem 0"
              src="/api/inbound-messages/${m.id}/audio"
-             onplay="markMsgListened(${m.id})" onended="loadMessages()"></audio>` : ''}
+             onplay="markMsgListened(${m.id})"></audio>` : ''}
       <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;flex-wrap:wrap">
         ${!m.listened ? `<button class="btn-ghost btn-sm" onclick="markMsgListened(${m.id})">Mark read</button>` : ''}
         <button class="btn-ghost btn-sm" style="color:var(--red)" onclick="deleteMsg(${m.id})">Delete</button>
@@ -1568,13 +1568,23 @@ function renderMessages() {
 }
 
 async function markMsgListened(id) {
+  // Update the card in-place so we don't destroy the playing <audio> element
+  const idx = _allMessages.findIndex(m => m.id === id);
+  if (idx !== -1 && _allMessages[idx].listened) return; // already done
   try {
     const updated = await api('PATCH', `/inbound-messages/${id}`, { listened: true });
-    const idx = _allMessages.findIndex(m => m.id === id);
     if (idx !== -1) _allMessages[idx] = updated;
-    renderMessages();
+    // Patch just the card visually without rebuilding it
+    const card = document.getElementById(`msgCard${id}`);
+    if (card) {
+      card.classList.remove('msg-unread');
+      card.querySelectorAll('.msg-unread-dot').forEach(d => d.remove());
+      card.querySelectorAll('button').forEach(b => {
+        if (b.textContent.trim() === 'Mark read') b.remove();
+      });
+    }
     _refreshMsgBadge();
-  } catch(e) { toast(e.message, 'error'); }
+  } catch(e) { /* non-critical */ }
 }
 
 async function deleteMsg(id) {

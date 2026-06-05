@@ -819,6 +819,19 @@ def report_calls():
 @api_bp.route('/inbound-messages', methods=['GET'])
 def list_inbound_messages():
     msgs = InboundMessage.query.order_by(InboundMessage.received_at.desc()).all()
+    # Backfill duration for any messages where it came back as 0
+    changed = False
+    for m in msgs:
+        if m.duration_seconds == 0 and m.recording_sid:
+            try:
+                rec = _get_twilio_client().recordings(m.recording_sid).fetch()
+                if rec.duration:
+                    m.duration_seconds = int(rec.duration)
+                    changed = True
+            except Exception:
+                pass
+    if changed:
+        db.session.commit()
     return jsonify([m.to_dict() for m in msgs])
 
 
