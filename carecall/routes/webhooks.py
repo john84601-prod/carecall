@@ -491,6 +491,73 @@ def sms_reply():
     return Response(str(mr), mimetype='text/xml')
 
 
+# ── Inbound calls (voicemail) ──────────────────────────────────────────────────
+
+@webhooks_bp.route('/inbound-call', methods=['POST'])
+def inbound_call():
+    """TwiML for anyone who calls the CareCall Twilio number directly."""
+    from twilio.twiml.voice_response import Record
+    vr = VoiceResponse()
+    vr.say(
+        "You have reached CareCall. "
+        "Please leave a message after the tone and we will follow up with you. "
+        "Press the pound key when finished.",
+        voice=_voice(),
+    )
+    vr.record(
+        max_length=120,
+        play_beep=True,
+        finish_on_key='#',
+        action=f"{_public_url()}/webhook/inbound-recording",
+        method='POST',
+        timeout=5,
+    )
+    vr.say("We did not receive a recording. Goodbye.", voice=_voice())
+    return _xml(vr)
+
+
+@webhooks_bp.route('/inbound-recording', methods=['POST'])
+def inbound_recording():
+    """Twilio posts here when the inbound recording is ready."""
+    from carecall.models import InboundMessage, Client
+    from datetime import datetime as _dt
+
+    recording_sid = request.form.get('RecordingSid', '')
+    duration      = request.form.get('RecordingDuration', '0')
+    call_sid      = request.form.get('CallSid', '')
+    from_number   = request.form.get('From', '')
+
+    try:
+        duration_int = int(duration)
+    except ValueError:
+        duration_int = 0
+
+    # Skip zero-length recordings (caller hung up immediately)
+    if duration_int > 0 and recording_sid:
+        norm = normalize_phone(from_number)
+        matched = next(
+            (c for c in Client.query.all() if normalize_phone(c.phone) == norm),
+            None,
+        )
+        msg = InboundMessage(
+            call_sid=call_sid,
+            recording_sid=recording_sid,
+            from_number=from_number,
+            duration_seconds=duration_int,
+            received_at=_dt.utcnow(),
+            matched_client_id=matched.id if matched else None,
+        )
+        db.session.add(msg)
+        db.session.commit()
+        logger.info(f"Inbound voicemail saved: {recording_sid} from {from_number} ({duration_int}s)")
+    else:
+        logger.info(f"Inbound call from {from_number} — no recording (duration={duration_int}s)")
+
+    vr = VoiceResponse()
+    vr.say("Thank you for your message. Goodbye.", voice=_voice())
+    return _xml(vr)
+
+
 # ── Test TwiML endpoint ────────────────────────────────────────────────────────
 
 @webhooks_bp.route('/test', methods=['POST'])

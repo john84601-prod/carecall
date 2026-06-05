@@ -66,9 +66,32 @@ def create_app():
         _migrate_call_log_reminder_session()
         _migrate_emergency_contact_can_text()
         _migrate_wellness_session_acknowledged_by()
+        _migrate_inbound_messages()
         _migrate_audio_files_register(app)
 
     return app
+
+
+def _migrate_inbound_messages():
+    """Create inbound_messages table if it doesn't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    if 'inbound_messages' not in inspect(engine).get_table_names():
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE inbound_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    call_sid VARCHAR(50) DEFAULT '',
+                    recording_sid VARCHAR(50) DEFAULT '',
+                    from_number VARCHAR(20) DEFAULT '',
+                    duration_seconds INTEGER DEFAULT 0,
+                    received_at DATETIME,
+                    listened BOOLEAN NOT NULL DEFAULT 0,
+                    notes TEXT DEFAULT '',
+                    matched_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL
+                )
+            """))
+            conn.commit()
 
 
 def _migrate_audio_files_register(app):

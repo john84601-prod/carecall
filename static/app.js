@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDashboard();
   loadSystemStatus();
   setInterval(loadSystemStatus, 60_000);
+  _refreshMsgBadge();
 });
 
 // ── System status bar ─────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ function setupTabs() {
         case 'schedules': loadSchedules(); break;
         case 'reports':   /* tiles are static; dates already initialised */ break;
         case 'audio':     loadAudio();     break;
+        case 'messages':  loadMessages();  break;
         case 'settings':  loadSettings();  break;
       }
     });
@@ -1497,6 +1499,8 @@ async function loadSettings() {
         <div class="settings-key">Public Webhook URL</div>
         <div class="settings-val">${esc(s.public_url)}</div>
       </div>`;
+    const inboundEl = document.getElementById('inboundWebhookUrl');
+    if (inboundEl) inboundEl.textContent = (s.public_url || '(public URL not available)') + '/webhook/inbound-call';
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -1513,6 +1517,89 @@ async function loadSettings() {
   await loadBackupConfig();
   // Load call pause state
   await loadCallsPaused();
+}
+
+// ── Messages tab ──────────────────────────────────────────────────────────────
+
+let _allMessages = [];
+
+async function loadMessages() {
+  try {
+    _allMessages = await api('GET', '/inbound-messages');
+    renderMessages();
+    _refreshMsgBadge();
+  } catch(e) {
+    document.getElementById('msgList').innerHTML =
+      `<span style="color:var(--red);font-size:.85rem">${esc(e.message)}</span>`;
+  }
+}
+
+function renderMessages() {
+  const unreadOnly = document.getElementById('msgUnreadOnly')?.checked;
+  const msgs = unreadOnly ? _allMessages.filter(m => !m.listened) : _allMessages;
+  const el = document.getElementById('msgList');
+  if (!msgs.length) {
+    el.innerHTML = `<span style="color:var(--muted);font-size:.85rem">${unreadOnly ? 'No unread messages.' : 'No messages yet.'}</span>`;
+    return;
+  }
+  el.innerHTML = msgs.map(m => {
+    const who   = m.matched_client_name
+      ? `<strong>${esc(m.matched_client_name)}</strong> <span style="color:var(--muted)">${esc(m.from_number)}</span>`
+      : `<strong>${esc(m.from_number || 'Unknown')}</strong>`;
+    const when  = new Date(m.received_at).toLocaleString();
+    const dur   = m.duration_seconds ? `${m.duration_seconds}s` : '—';
+    const unreadDot = m.listened ? '' : '<span class="msg-unread-dot"></span>';
+    return `
+    <div class="msg-card${m.listened ? '' : ' msg-unread'}" id="msgCard${m.id}">
+      <div class="msg-card-top">
+        <div class="msg-who">${unreadDot}${who}</div>
+        <div class="msg-meta">${when} &middot; ${dur}</div>
+      </div>
+      ${m.recording_sid ? `
+      <audio controls preload="none" style="width:100%;margin:.5rem 0"
+             src="/api/inbound-messages/${m.id}/audio"
+             onplay="markMsgListened(${m.id})"></audio>` : ''}
+      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;flex-wrap:wrap">
+        ${!m.listened ? `<button class="btn-ghost btn-sm" onclick="markMsgListened(${m.id})">Mark read</button>` : ''}
+        <button class="btn-ghost btn-sm" style="color:var(--red)" onclick="deleteMsg(${m.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function markMsgListened(id) {
+  try {
+    const updated = await api('PATCH', `/inbound-messages/${id}`, { listened: true });
+    const idx = _allMessages.findIndex(m => m.id === id);
+    if (idx !== -1) _allMessages[idx] = updated;
+    renderMessages();
+    _refreshMsgBadge();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteMsg(id) {
+  if (!confirm('Delete this message? The recording will also be removed from Twilio.')) return;
+  try {
+    await api('DELETE', `/inbound-messages/${id}`);
+    _allMessages = _allMessages.filter(m => m.id !== id);
+    renderMessages();
+    _refreshMsgBadge();
+    toast('Message deleted.');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function _refreshMsgBadge() {
+  try {
+    const r = await api('GET', '/inbound-messages/unread-count');
+    const badge = document.getElementById('msgBadge');
+    if (!badge) return;
+    if (r.count > 0) {
+      badge.textContent = r.count;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) { /* badge is non-critical */ }
 }
 
 async function loadCallsPaused() {

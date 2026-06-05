@@ -27,6 +27,7 @@
   <button class="nav-btn" data-tab="schedules">Schedules</button>
   <button class="nav-btn" data-tab="reports">Reports</button>
   <button class="nav-btn" data-tab="audio">Audio Files</button>
+  <button class="nav-btn" data-tab="messages">Messages <span class="nav-badge" id="msgBadge" style="display:none"></span></button>
   <button class="nav-btn" data-tab="settings">Settings</button>
 </nav>
 
@@ -451,6 +452,10 @@
         Restart CareCall after making changes.
       </div>
       <div id="settingsInfo"></div>
+      <div class="info-box" style="margin-top:.75rem">
+        <strong>Inbound call webhook URL</strong> — configure this in the Twilio Console under your phone number's "A call comes in" setting:<br>
+        <code id="inboundWebhookUrl" style="font-size:.8rem;word-break:break-all">Loading…</code>
+      </div>
 
       <h3 style="margin-top:1.5rem">Software Version</h3>
       <div id="versionInfo" class="settings-row" style="align-items:center;gap:1rem;flex-wrap:wrap">
@@ -596,6 +601,23 @@
           <button class="btn-primary btn-sm" onclick="saveBackupConfig()">Save Schedule</button>
           <span id="backupSaveResult" style="margin-left:.75rem;font-size:.82rem"></span>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Messages ─────────────────────────────────────────────────────── -->
+  <section id="tab-messages" class="tab">
+    <div class="settings-panel">
+      <h2>Inbound Messages</h2>
+      <p>Voicemails left by callers who dialed your CareCall Twilio number.</p>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+        <button class="btn-ghost btn-sm" onclick="loadMessages()">🔄 Refresh</button>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
+          <input type="checkbox" id="msgUnreadOnly" onchange="renderMessages()"> Unread only
+        </label>
+      </div>
+      <div id="msgList">
+        <span style="color:var(--muted);font-size:.85rem">Loading…</span>
       </div>
     </div>
   </section>

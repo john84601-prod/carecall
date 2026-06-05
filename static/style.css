@@ -91,6 +91,12 @@ nav {
 }
 .nav-btn:hover  { color: var(--teal); }
 .nav-btn.active { color: var(--teal); border-bottom-color: var(--teal); }
+.nav-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--red); color: #fff; font-size: .65rem; font-weight: 700;
+  min-width: 16px; height: 16px; border-radius: 8px; padding: 0 4px;
+  margin-left: 4px; vertical-align: middle; line-height: 1;
+}
 
 /* ── Main ────────────────────────────────────────────────────────────── */
 main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
@@ -1170,6 +1176,20 @@ hr { border: none; border-top: 1px solid var(--border); }
 .sys-paused { background: #f5a623; }
 #sysUptime     { color: rgba(255,255,255,.6); }
 #sysServerTime { color: rgba(255,255,255,.85); font-variant-numeric: tabular-nums; }
+
+/* ── Messages tab ────────────────────────────────────────────────────── */
+.msg-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: .85rem 1rem; margin-bottom: .6rem; background: #fff;
+}
+.msg-card.msg-unread { border-left: 3px solid var(--teal); }
+.msg-card-top { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .4rem; margin-bottom: .25rem; }
+.msg-who  { font-size: .9rem; display: flex; align-items: center; gap: .35rem; }
+.msg-meta { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.msg-unread-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--teal); flex-shrink: 0;
+}
 
 /* ── Schedules date nav ──────────────────────────────────────────────── */
 .sched-date-nav {

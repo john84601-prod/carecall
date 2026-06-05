@@ -287,6 +287,37 @@ class AudioFile(db.Model):
         }
 
 
+class InboundMessage(db.Model):
+    """Voicemail left by someone who called the CareCall Twilio number."""
+    __tablename__ = 'inbound_messages'
+    id               = db.Column(db.Integer, primary_key=True)
+    call_sid         = db.Column(db.String(50), default='')
+    recording_sid    = db.Column(db.String(50), default='')
+    from_number      = db.Column(db.String(20), default='')
+    duration_seconds = db.Column(db.Integer, default=0)
+    received_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    listened         = db.Column(db.Boolean, default=False)
+    notes            = db.Column(db.Text, default='')
+    matched_client_id = db.Column(
+        db.Integer, db.ForeignKey('clients.id', ondelete='SET NULL'), nullable=True
+    )
+    matched_client = db.relationship('Client', foreign_keys=[matched_client_id])
+
+    def to_dict(self):
+        return {
+            'id':                  self.id,
+            'call_sid':            self.call_sid or '',
+            'recording_sid':       self.recording_sid or '',
+            'from_number':         self.from_number or '',
+            'duration_seconds':    self.duration_seconds or 0,
+            'received_at':         self.received_at.isoformat() + 'Z',
+            'listened':            self.listened,
+            'notes':               self.notes or '',
+            'matched_client_id':   self.matched_client_id,
+            'matched_client_name': self.matched_client.full_name if self.matched_client else None,
+        }
+
+
 class CallLog(db.Model):
     __tablename__ = 'call_logs'
     id = db.Column(db.Integer, primary_key=True)

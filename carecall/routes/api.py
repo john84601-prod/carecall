@@ -6,7 +6,7 @@ from datetime import date, datetime as _dt
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout, InboundMessage
 
 # Project root (two levels up from this file: routes/ → carecall/ → project/)
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -813,6 +813,77 @@ def report_calls():
 
 
 # ── Settings & test ────────────────────────────────────────────────────────────
+
+# ── Inbound messages ───────────────────────────────────────────────────────────
+
+@api_bp.route('/inbound-messages', methods=['GET'])
+def list_inbound_messages():
+    msgs = InboundMessage.query.order_by(InboundMessage.received_at.desc()).all()
+    return jsonify([m.to_dict() for m in msgs])
+
+
+@api_bp.route('/inbound-messages/unread-count', methods=['GET'])
+def inbound_unread_count():
+    count = InboundMessage.query.filter_by(listened=False).count()
+    return jsonify({'count': count})
+
+
+@api_bp.route('/inbound-messages/<int:msg_id>', methods=['PATCH'])
+def update_inbound_message(msg_id):
+    msg = db.session.get(InboundMessage, msg_id)
+    if not msg:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json() or {}
+    if 'listened' in data:
+        msg.listened = bool(data['listened'])
+    if 'notes' in data:
+        msg.notes = str(data['notes'])
+    db.session.commit()
+    return jsonify(msg.to_dict())
+
+
+@api_bp.route('/inbound-messages/<int:msg_id>', methods=['DELETE'])
+def delete_inbound_message(msg_id):
+    msg = db.session.get(InboundMessage, msg_id)
+    if not msg:
+        return jsonify({'error': 'Not found'}), 404
+    # Delete the Twilio recording too so we don't accumulate storage
+    if msg.recording_sid:
+        try:
+            from twilio.rest import Client as _TwilioClient
+            tw = _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
+            tw.recordings(msg.recording_sid).delete()
+        except Exception as e:
+            current_app.logger.warning(f"Could not delete Twilio recording {msg.recording_sid}: {e}")
+    db.session.delete(msg)
+    db.session.commit()
+    return '', 204
+
+
+@api_bp.route('/inbound-messages/<int:msg_id>/audio', methods=['GET'])
+def proxy_inbound_audio(msg_id):
+    """Proxy the Twilio recording so credentials stay server-side."""
+    import requests as _req
+    from flask import Response as _Resp
+    msg = db.session.get(InboundMessage, msg_id)
+    if not msg or not msg.recording_sid:
+        return jsonify({'error': 'Not found'}), 404
+    account_sid = os.getenv('TWILIO_ACCOUNT_SID', '')
+    auth_token  = os.getenv('TWILIO_AUTH_TOKEN', '')
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{msg.recording_sid}.mp3"
+    try:
+        r = _req.get(url, auth=(account_sid, auth_token), stream=True, timeout=15)
+        if r.status_code != 200:
+            return jsonify({'error': 'Recording not available'}), 502
+        return _Resp(
+            r.iter_content(chunk_size=8192),
+            content_type='audio/mpeg',
+            headers={'Accept-Ranges': 'bytes'},
+        )
+    except Exception as e:
+        current_app.logger.error(f"Audio proxy error for {msg.recording_sid}: {e}")
+        return jsonify({'error': 'Could not fetch recording'}), 502
+
 
 @api_bp.route('/status', methods=['GET'])
 def get_system_status():
