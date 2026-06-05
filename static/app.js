@@ -2469,6 +2469,7 @@ async function _doFormatDrive(device, label) {
     });
     const data = await res.json();
     if (!res.ok) {
+      console.error('Format error response:', data);
       note.textContent = `Format failed: ${data.error}`;
       toast(`Format failed: ${data.error}`, 'error');
     } else {
