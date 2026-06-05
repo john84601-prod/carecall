@@ -1055,18 +1055,18 @@ def backup_format():
             ['udisksctl', 'mount', '-b', device],
             capture_output=True, text=True, timeout=15
         )
-        mount_log.append(f'udisksctl: rc={r1.returncode} {(r1.stdout or r1.stderr or "").strip()}')
+        mount_log.append(f'udisksctl: rc={r1.returncode} out={r1.stdout.strip()!r} err={r1.stderr.strip()!r}')
         if r1.returncode == 0:
             m = re.search(r'at\s+(\S+)', r1.stdout)
             if m:
                 mountpoint = m.group(1).rstrip('.')
 
-        # ── Attempt 2: sudo mount to /media/pi/<label> ──────────────────────
+        # ── Attempt 2: sudo mkdir + sudo mount to /media/<user>/<label> ────
         if not mountpoint:
             import getpass
             user = getpass.getuser()
             mp = f'/media/{user}/{label}'
-            os.makedirs(mp, exist_ok=True)
+            subprocess.run(['sudo', 'mkdir', '-p', mp], capture_output=True)
             r2 = subprocess.run(
                 ['sudo', 'mount', '-t', 'exfat', device, mp],
                 capture_output=True, text=True, timeout=15
