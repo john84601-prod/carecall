@@ -608,8 +608,52 @@
   <!-- ── Messages ─────────────────────────────────────────────────────── -->
   <section id="tab-messages" class="tab">
     <div class="settings-panel">
-      <h2>Inbound Messages</h2>
-      <p>Voicemails left by callers who dialed your CareCall Twilio number.</p>
+
+      <!-- ── Greeting configurator ──────────────────────────────────── -->
+      <h2>Caller Greeting</h2>
+      <p>What callers hear when they dial your CareCall number.</p>
+
+      <div class="greeting-toggle" id="greetingToggle">
+        <button class="greeting-mode-btn active" id="greetingModeScript"
+                onclick="setGreetingMode('script')">Script</button>
+        <button class="greeting-mode-btn" id="greetingModeRecording"
+                onclick="setGreetingMode('recording')">Custom Recording</button>
+      </div>
+
+      <!-- Script panel -->
+      <div id="greetingScriptPanel" style="margin-top:.85rem">
+        <textarea id="greetingScriptText" rows="3"
+          style="width:100%;resize:vertical;font-size:.875rem;padding:.6rem;border:1px solid var(--border);border-radius:6px;font-family:inherit"
+          placeholder="Enter the greeting callers will hear…"></textarea>
+        <div style="display:flex;gap:.6rem;margin-top:.5rem;align-items:center">
+          <button class="btn-primary btn-sm" onclick="saveGreetingScript()">Save Script</button>
+          <span id="greetingScriptStatus" style="font-size:.82rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <!-- Recording panel -->
+      <div id="greetingRecordingPanel" style="display:none;margin-top:.85rem">
+        <div id="greetingCurrentRecording" style="margin-bottom:.75rem"></div>
+        <div class="greeting-recorder">
+          <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <button class="btn-primary btn-sm" id="greetingRecordBtn" onclick="startGreetingRecording()">⏺ Record</button>
+            <button class="btn-ghost btn-sm" id="greetingStopBtn" style="display:none" onclick="stopGreetingRecording()">⏹ Stop</button>
+            <span id="greetingRecordTimer" style="display:none;font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--red);font-weight:600"></span>
+          </div>
+          <div id="greetingRecordPreview" style="display:none;margin-top:.6rem">
+            <audio id="greetingAudioPreview" controls style="width:100%;max-width:380px"></audio>
+            <div style="display:flex;gap:.6rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
+              <button class="btn-primary btn-sm" id="greetingSaveBtn" onclick="saveGreetingRecording()">Save as Greeting</button>
+              <button class="btn-ghost btn-sm" onclick="discardGreetingRecording()">Discard</button>
+              <span id="greetingRecordStatus" style="font-size:.82rem;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Message list ────────────────────────────────────────────── -->
+      <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Inbound Messages</h2>
+      <p>Voicemails left by callers who dialed your CareCall number.</p>
       <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
         <button class="btn-ghost btn-sm" onclick="loadMessages()">🔄 Refresh</button>
         <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">

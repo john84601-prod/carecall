@@ -814,6 +814,89 @@ def report_calls():
 
 # ── Settings & test ────────────────────────────────────────────────────────────
 
+# ── Inbound greeting config ────────────────────────────────────────────────────
+
+_DEFAULT_GREETING_SCRIPT = (
+    "You have reached CareCall. "
+    "Please leave a message after the tone and we will follow up with you. "
+    "Press the pound key when finished."
+)
+_INBOUND_GREETING_FILE = '_inbound_greeting.mp3'
+
+
+@api_bp.route('/inbound-greeting', methods=['GET'])
+def get_inbound_greeting():
+    cfg = _load_system_config()
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    has_recording = os.path.isfile(os.path.join(upload_folder, _INBOUND_GREETING_FILE))
+    return jsonify({
+        'type':            cfg.get('inbound_greeting_type', 'script'),
+        'script':          cfg.get('inbound_greeting_script', _DEFAULT_GREETING_SCRIPT),
+        'has_recording':   has_recording,
+    })
+
+
+@api_bp.route('/inbound-greeting', methods=['POST'])
+def save_inbound_greeting():
+    data = request.get_json() or {}
+    cfg  = _load_system_config()
+    if 'type' in data:
+        cfg['inbound_greeting_type'] = 'recording' if data['type'] == 'recording' else 'script'
+    if 'script' in data:
+        cfg['inbound_greeting_script'] = str(data['script']).strip() or _DEFAULT_GREETING_SCRIPT
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+@api_bp.route('/inbound-greeting/recording', methods=['POST'])
+def upload_inbound_greeting_recording():
+    """Accept a browser-recorded blob, convert to MP3, save as the inbound greeting."""
+    import subprocess, tempfile
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio data received'}), 400
+    audio_file  = request.files['audio']
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    output_path = os.path.join(upload_folder, _INBOUND_GREETING_FILE)
+    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as tmp:
+        audio_file.save(tmp.name)
+        tmp_path = tmp.name
+    try:
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', tmp_path,
+             '-acodec', 'libmp3lame', '-ab', '128k', '-ar', '8000', output_path],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            current_app.logger.error(f"ffmpeg greeting: {result.stderr}")
+            return jsonify({'error': 'Audio conversion failed. Is ffmpeg installed?'}), 500
+    except FileNotFoundError:
+        return jsonify({'error': 'ffmpeg is not installed. Run: sudo apt-get install ffmpeg'}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Conversion timed out'}), 500
+    finally:
+        try: os.unlink(tmp_path)
+        except OSError: pass
+    # Switch config to use recording
+    cfg = _load_system_config()
+    cfg['inbound_greeting_type'] = 'recording'
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+@api_bp.route('/inbound-greeting/recording', methods=['DELETE'])
+def delete_inbound_greeting_recording():
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    path = os.path.join(upload_folder, _INBOUND_GREETING_FILE)
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    cfg = _load_system_config()
+    cfg['inbound_greeting_type'] = 'script'
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
 # ── Inbound messages ───────────────────────────────────────────────────────────
 
 @api_bp.route('/inbound-messages', methods=['GET'])

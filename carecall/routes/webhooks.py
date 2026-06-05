@@ -496,14 +496,28 @@ def sms_reply():
 @webhooks_bp.route('/inbound-call', methods=['POST'])
 def inbound_call():
     """TwiML for anyone who calls the CareCall Twilio number directly."""
-    from twilio.twiml.voice_response import Record
+    from flask import current_app
+    from carecall.routes.api import _load_system_config, _INBOUND_GREETING_FILE
+
+    cfg             = _load_system_config()
+    greeting_type   = cfg.get('inbound_greeting_type', 'script')
+    greeting_script = cfg.get('inbound_greeting_script',
+                               "You have reached CareCall. "
+                               "Please leave a message after the tone and we will follow up with you. "
+                               "Press the pound key when finished.")
+
     vr = VoiceResponse()
-    vr.say(
-        "You have reached CareCall. "
-        "Please leave a message after the tone and we will follow up with you. "
-        "Press the pound key when finished.",
-        voice=_voice(),
-    )
+
+    if greeting_type == 'recording':
+        upload_folder = current_app.config['UPLOAD_FOLDER']
+        greeting_path = os.path.join(upload_folder, _INBOUND_GREETING_FILE)
+        if os.path.isfile(greeting_path):
+            vr.play(f"{_public_url()}/uploads/{_INBOUND_GREETING_FILE}")
+        else:
+            vr.say(greeting_script, voice=_voice())
+    else:
+        vr.say(greeting_script, voice=_voice())
+
     vr.record(
         max_length=120,
         play_beep=True,

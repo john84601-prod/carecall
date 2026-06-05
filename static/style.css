@@ -1177,6 +1177,20 @@ hr { border: none; border-top: 1px solid var(--border); }
 #sysUptime     { color: rgba(255,255,255,.6); }
 #sysServerTime { color: rgba(255,255,255,.85); font-variant-numeric: tabular-nums; }
 
+/* ── Greeting configurator ───────────────────────────────────────────── */
+.greeting-toggle {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; margin-top: .5rem;
+}
+.greeting-mode-btn {
+  padding: .4rem 1rem; border: none; background: #fff;
+  font-size: .85rem; cursor: pointer; color: var(--text);
+  transition: background .15s, color .15s;
+}
+.greeting-mode-btn:first-child { border-right: 1px solid var(--border); }
+.greeting-mode-btn.active { background: var(--teal); color: #fff; font-weight: 600; }
+.greeting-recorder { padding: .75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+
 /* ── Messages tab ────────────────────────────────────────────────────── */
 .msg-card {
   border: 1px solid var(--border); border-radius: 8px;

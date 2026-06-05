@@ -1519,11 +1519,155 @@ async function loadSettings() {
   await loadCallsPaused();
 }
 
+// ── Inbound greeting configurator ────────────────────────────────────────────
+
+let _greetingRecordedBlob = null;
+let _greetingMediaRecorder = null;
+let _greetingMicStream = null;
+let _greetingTimerInterval = null;
+
+async function loadGreeting() {
+  try {
+    const g = await api('GET', '/inbound-greeting');
+    document.getElementById('greetingScriptText').value = g.script || '';
+    _applyGreetingMode(g.type, g.has_recording);
+  } catch(e) { /* non-critical */ }
+}
+
+function setGreetingMode(mode) {
+  api('POST', '/inbound-greeting', { type: mode }).catch(() => {});
+  _applyGreetingMode(mode, !!_greetingRecordedBlob ||
+    document.getElementById('greetingCurrentRecording').textContent.includes('Active'));
+}
+
+function _applyGreetingMode(mode, hasRecording) {
+  const isRec = mode === 'recording';
+  document.getElementById('greetingScriptPanel').style.display    = isRec ? 'none' : '';
+  document.getElementById('greetingRecordingPanel').style.display = isRec ? '' : 'none';
+  document.getElementById('greetingModeScript').classList.toggle('active', !isRec);
+  document.getElementById('greetingModeRecording').classList.toggle('active', isRec);
+  if (isRec) _renderGreetingRecordingStatus(hasRecording);
+}
+
+function _renderGreetingRecordingStatus(hasRecording) {
+  const el = document.getElementById('greetingCurrentRecording');
+  if (hasRecording) {
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;background:#f0faf4;border:1px solid #b2e5c8;border-radius:6px;font-size:.85rem">
+      <span style="color:var(--green);font-weight:600">✓ Active custom recording</span>
+      <button class="btn-ghost btn-sm" style="color:var(--red);margin-left:auto" onclick="deleteGreetingRecording()">Remove</button>
+    </div>`;
+  } else {
+    el.innerHTML = `<p style="color:var(--muted);font-size:.85rem;margin:0">No custom recording saved yet. Record one below.</p>`;
+  }
+}
+
+async function saveGreetingScript() {
+  const script = document.getElementById('greetingScriptText').value.trim();
+  const statusEl = document.getElementById('greetingScriptStatus');
+  try {
+    await api('POST', '/inbound-greeting', { type: 'script', script });
+    statusEl.textContent = 'Saved.';
+    statusEl.style.color = 'var(--green)';
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  } catch(e) {
+    statusEl.textContent = e.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
+async function startGreetingRecording() {
+  if (_greetingMediaRecorder && _greetingMediaRecorder.state !== 'inactive') return;
+  try {
+    _greetingMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    toast(e.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Could not access microphone: ' + e.message, 'error');
+    return;
+  }
+  const chunks = [];
+  const preferredTypes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4'];
+  const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  _greetingMediaRecorder = new MediaRecorder(_greetingMicStream, mimeType ? { mimeType } : {});
+  _greetingMediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  _greetingMediaRecorder.onstop = () => {
+    _greetingRecordedBlob = new Blob(chunks, { type: _greetingMediaRecorder.mimeType });
+    const url = URL.createObjectURL(_greetingRecordedBlob);
+    if (_greetingMicStream) { _greetingMicStream.getTracks().forEach(t => t.stop()); _greetingMicStream = null; }
+    document.getElementById('greetingAudioPreview').src = url;
+    document.getElementById('greetingRecordPreview').style.display = '';
+    document.getElementById('greetingRecordBtn').style.display = '';
+    document.getElementById('greetingStopBtn').style.display = 'none';
+    document.getElementById('greetingRecordTimer').style.display = 'none';
+    clearInterval(_greetingTimerInterval);
+  };
+  _greetingMediaRecorder.start(250);
+  const startTime = Date.now();
+  document.getElementById('greetingRecordBtn').style.display = 'none';
+  document.getElementById('greetingStopBtn').style.display = '';
+  document.getElementById('greetingRecordPreview').style.display = 'none';
+  document.getElementById('greetingRecordTimer').style.display = '';
+  _greetingTimerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    document.getElementById('greetingRecordTimer').textContent =
+      String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+  }, 500);
+}
+
+function stopGreetingRecording() {
+  clearInterval(_greetingTimerInterval);
+  if (_greetingMediaRecorder && _greetingMediaRecorder.state !== 'inactive') _greetingMediaRecorder.stop();
+  else if (_greetingMicStream) { _greetingMicStream.getTracks().forEach(t => t.stop()); _greetingMicStream = null; }
+}
+
+async function saveGreetingRecording() {
+  if (!_greetingRecordedBlob) { toast('Nothing recorded yet.', 'error'); return; }
+  const btn = document.getElementById('greetingSaveBtn');
+  const statusEl = document.getElementById('greetingRecordStatus');
+  btn.disabled = true; btn.textContent = 'Converting…';
+  const fd = new FormData();
+  fd.append('audio', _greetingRecordedBlob, 'greeting.webm');
+  try {
+    const res = await fetch('/api/inbound-greeting/recording', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    _greetingRecordedBlob = null;
+    document.getElementById('greetingRecordPreview').style.display = 'none';
+    document.getElementById('greetingAudioPreview').src = '';
+    _renderGreetingRecordingStatus(true);
+    _applyGreetingMode('recording', true);
+    toast('Greeting saved.', 'success');
+  } catch(e) {
+    statusEl.textContent = e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save as Greeting';
+  }
+}
+
+function discardGreetingRecording() {
+  _greetingRecordedBlob = null;
+  const preview = document.getElementById('greetingAudioPreview');
+  URL.revokeObjectURL(preview.src);
+  preview.src = '';
+  document.getElementById('greetingRecordPreview').style.display = 'none';
+  document.getElementById('greetingRecordBtn').style.display = '';
+}
+
+async function deleteGreetingRecording() {
+  if (!confirm('Remove the custom recording and revert to the script?')) return;
+  try {
+    await api('DELETE', '/inbound-greeting/recording');
+    _renderGreetingRecordingStatus(false);
+    _applyGreetingMode('script', false);
+    toast('Custom recording removed.');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
 // ── Messages tab ──────────────────────────────────────────────────────────────
 
 let _allMessages = [];
 
 async function loadMessages() {
+  loadGreeting();
   try {
     _allMessages = await api('GET', '/inbound-messages');
     renderMessages();
