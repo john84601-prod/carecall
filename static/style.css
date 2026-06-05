@@ -431,6 +431,40 @@ tr:hover td { background: #f8fafc; }
 .settings-key { color: var(--muted); font-size: .8rem; margin-bottom: .2rem; }
 .settings-val { font-family: monospace; font-size: .9rem; }
 
+/* ── Backup ──────────────────────────────────────────────────────────── */
+.backup-drive-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .7rem 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.backup-drive-info { flex: 1; min-width: 0; }
+.backup-drive-label { font-weight: 600; font-size: .9rem; }
+.backup-drive-meta  { font-size: .78rem; color: var(--muted); margin-top: .15rem; }
+.backup-drive-mount { font-size: .78rem; margin-top: .15rem; color: var(--green); }
+.backup-drive-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+
+/* File browser */
+.fb-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .85rem;
+}
+.fb-row:last-child { border-bottom: none; }
+.fb-dir { cursor: pointer; }
+.fb-dir:hover { background: #f0f4fa; }
+.fb-icon { flex-shrink: 0; width: 1.2rem; text-align: center; }
+.fb-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fb-meta { flex-shrink: 0; font-size: .78rem; color: var(--muted); }
+
 /* ── Modals ──────────────────────────────────────────────────────────── */
 .overlay {
   align-items: flex-start;

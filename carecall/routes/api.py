@@ -1,10 +1,16 @@
 import os
 import re
-from datetime import date
+import json as _json
+import zipfile
+from datetime import date, datetime as _dt
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
 from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout
+
+# Project root (two levels up from this file: routes/ → carecall/ → project/)
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BACKUP_CONFIG_PATH = os.path.join(_APP_ROOT, 'backup_config.json')
 
 api_bp = Blueprint('api', __name__)
 
@@ -937,6 +943,210 @@ def test_sms():
         return jsonify({'success': True, 'message_sid': sid})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Backup ────────────────────────────────────────────────────────────────────
+
+@api_bp.route('/backup/usb-drives', methods=['GET'])
+def backup_usb_drives():
+    """List USB / removable storage partitions visible to the system."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,LABEL,RM,VENDOR,MODEL'],
+            capture_output=True, text=True, timeout=10
+        )
+        data = _json.loads(result.stdout)
+    except FileNotFoundError:
+        return jsonify({'drives': [], 'note': 'lsblk not available on this platform'})
+    except Exception as e:
+        return jsonify({'drives': [], 'error': str(e)})
+
+    drives = []
+
+    def _walk(node, parent_removable=False):
+        is_rm = str(node.get('rm', '0')) in ('1', 'true', 'True')
+        node_type = node.get('type', '')
+        mount = (node.get('mountpoint') or '').strip()
+        is_media = mount.startswith('/media') or mount.startswith('/mnt')
+
+        if node_type == 'part' and (is_rm or parent_removable or is_media):
+            drives.append({
+                'device':     f"/dev/{node['name']}",
+                'size':       node.get('size', '?'),
+                'label':      (node.get('label') or node['name']).strip(),
+                'mountpoint': mount or None,
+                'vendor':     (node.get('vendor') or '').strip(),
+                'model':      (node.get('model') or '').strip(),
+            })
+        for child in node.get('children') or []:
+            _walk(child, is_rm or parent_removable)
+
+    for dev in data.get('blockdevices', []):
+        _walk(dev)
+
+    return jsonify({'drives': drives})
+
+
+@api_bp.route('/backup/browse', methods=['GET'])
+def backup_browse():
+    """Return a directory listing. Restricted to /media and /mnt."""
+    import stat as _stat
+    path = request.args.get('path', '/media')
+    real = os.path.realpath(path)
+    allowed = ('/media', '/mnt')
+    if not any(real.startswith(r) for r in allowed):
+        return jsonify({'error': 'Access restricted to /media and /mnt'}), 403
+    try:
+        entries = []
+        for name in sorted(os.listdir(real)):
+            full = os.path.join(real, name)
+            try:
+                s = os.stat(full)
+                is_dir = _stat.S_ISDIR(s.st_mode)
+                entries.append({
+                    'name':     name,
+                    'path':     full,
+                    'is_dir':   is_dir,
+                    'size':     None if is_dir else s.st_size,
+                    'modified': _dt.fromtimestamp(s.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                })
+            except Exception:
+                pass
+        parent = os.path.dirname(real)
+        can_go_up = any(parent.startswith(r) for r in allowed)
+        return jsonify({'path': real, 'parent': parent if can_go_up else None, 'entries': entries})
+    except PermissionError:
+        return jsonify({'error': 'Permission denied'}), 403
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/backup/format', methods=['POST'])
+def backup_format():
+    """Unmount and format a partition as exFAT. Requires passwordless sudo for mkfs.exfat."""
+    import subprocess
+    data = request.get_json() or {}
+    device = data.get('device', '')
+    label  = (data.get('label') or 'CareCallBak')[:11]   # FAT label limit
+
+    # Only allow real block-device partition paths
+    if not re.match(r'^/dev/(sd[a-z][1-9]|mmcblk\d+p\d+|vd[a-z][1-9])$', device):
+        return jsonify({'error': 'Invalid device path'}), 400
+
+    try:
+        subprocess.run(['sudo', 'umount', device], capture_output=True)
+        result = subprocess.run(
+            ['sudo', 'mkfs.exfat', '-n', label, device],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or 'Format failed').strip()
+            return jsonify({'error': err}), 500
+        return jsonify({'success': True,
+                        'message': f'{device} formatted as exFAT (label: {label})'})
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Format timed out after 2 minutes'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/backup/run', methods=['POST'])
+def backup_run():
+    """Create a backup ZIP immediately at the given destination directory."""
+    data = request.get_json() or {}
+    destination = (data.get('destination') or '').strip()
+    if not destination:
+        return jsonify({'error': 'Destination path required'}), 400
+    real_dest = os.path.realpath(destination)
+    if not os.path.isdir(real_dest):
+        return jsonify({'error': f'Destination does not exist: {destination}'}), 400
+    try:
+        result = _do_backup(real_dest)
+        return jsonify({'success': True, 'filename': result['filename'], 'size': result['size']})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/backup/config', methods=['GET'])
+def get_backup_config():
+    return jsonify(_load_backup_config())
+
+
+@api_bp.route('/backup/config', methods=['POST'])
+def save_backup_config():
+    data = request.get_json() or {}
+    config = {
+        'enabled':       bool(data.get('enabled', False)),
+        'destination':   str(data.get('destination', '')),
+        'frequency':     str(data.get('frequency', 'daily')),
+        'time':          str(data.get('time', '02:00')),
+        'day_of_week':   str(data.get('day_of_week', 'sun')),
+        'day_of_month':  int(data.get('day_of_month', 1)),
+    }
+    _save_backup_config(config)
+    try:
+        from carecall.scheduler import update_backup_job
+        update_backup_job(config)
+    except Exception as e:
+        current_app.logger.warning(f"Backup scheduler update failed: {e}")
+    return jsonify({'success': True})
+
+
+# ── Backup helpers ─────────────────────────────────────────────────────────────
+
+def _load_backup_config():
+    defaults = {
+        'enabled': False, 'destination': '',
+        'frequency': 'daily', 'time': '02:00',
+        'day_of_week': 'sun', 'day_of_month': 1,
+    }
+    try:
+        with open(_BACKUP_CONFIG_PATH) as f:
+            defaults.update(_json.load(f))
+    except Exception:
+        pass
+    return defaults
+
+
+def _save_backup_config(config):
+    with open(_BACKUP_CONFIG_PATH, 'w') as f:
+        _json.dump(config, f, indent=2)
+
+
+def _do_backup(destination_dir):
+    """Build a timestamped ZIP of all essential CareCall files."""
+    ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'carecall_backup_{ts}.zip'
+    filepath = os.path.join(destination_dir, filename)
+
+    single_files = [
+        ('carecall.db',      os.path.join(_APP_ROOT, 'carecall.db')),
+        ('carecall_jobs.db', os.path.join(_APP_ROOT, 'carecall_jobs.db')),
+        ('.env',             os.path.join(_APP_ROOT, '.env')),
+        ('carecall.service', os.path.join(_APP_ROOT, 'carecall.service')),
+        ('backup_config.json', _BACKUP_CONFIG_PATH),
+    ]
+    uploads_dir = os.path.join(_APP_ROOT, 'uploads')
+
+    with zipfile.ZipFile(filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for arc_name, src in single_files:
+            if os.path.isfile(src):
+                zf.write(src, arc_name)
+        if os.path.isdir(uploads_dir):
+            for dirpath, _dirs, filenames in os.walk(uploads_dir):
+                for fname in filenames:
+                    full = os.path.join(dirpath, fname)
+                    zf.write(full, os.path.relpath(full, _APP_ROOT))
+
+    size = os.path.getsize(filepath)
+    if size > 1_048_576:
+        hr = f'{size/1_048_576:.1f} MB'
+    elif size > 1024:
+        hr = f'{size/1024:.1f} KB'
+    else:
+        hr = f'{size} bytes'
+    return {'filename': filename, 'size': hr}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

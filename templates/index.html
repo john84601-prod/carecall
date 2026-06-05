@@ -459,6 +459,130 @@
         <button class="btn-primary" onclick="sendTestCall()">Call Now</button>
       </div>
       <div id="testResult" style="margin-top:.75rem"></div>
+
+      <!-- ── Backup ─────────────────────────────────────────────────── -->
+      <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Backup</h2>
+
+      <!-- USB Drives -->
+      <h3>USB Storage Devices</h3>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:.6rem">
+        Plug in a USB flash drive, then click Refresh to detect it.
+      </p>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+        <button class="btn-ghost btn-sm" onclick="loadBackupDrives()">🔄 Refresh Drives</button>
+        <span id="driveRefreshNote" style="color:var(--muted);font-size:.8rem"></span>
+      </div>
+      <div id="backupDriveList" style="display:flex;flex-direction:column;gap:.5rem">
+        <span style="color:var(--muted);font-size:.85rem">Click Refresh to scan for drives.</span>
+      </div>
+
+      <!-- Backup Content -->
+      <h3 style="margin-top:1.5rem">Backup Contents</h3>
+      <div class="info-box" style="margin-bottom:0">
+        <strong>Included in every backup:</strong>
+        <ul style="margin:.4rem 0 0 1.1rem;line-height:1.8">
+          <li><code>carecall.db</code> — all clients, schedules &amp; call history</li>
+          <li><code>carecall_jobs.db</code> — scheduled job state</li>
+          <li><code>.env</code> — Twilio credentials &amp; configuration</li>
+          <li><code>carecall.service</code> — systemd service definition</li>
+          <li><code>uploads/</code> — all recorded audio files</li>
+          <li><code>backup_config.json</code> — backup schedule settings</li>
+        </ul>
+        <p style="margin-top:.5rem;color:var(--muted);font-size:.82rem">
+          Application code is not included — it can be restored from GitHub.
+        </p>
+      </div>
+
+      <!-- Backup Destination -->
+      <h3 style="margin-top:1.5rem">Backup Destination</h3>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:.5rem">
+        Select a mounted USB drive or enter a custom path on the server.
+      </p>
+      <div class="row gap-sm" style="flex-wrap:wrap">
+        <select id="backupDestSelect" class="flex-1" onchange="backupDestSelectChanged()"
+                style="min-width:180px">
+          <option value="">— select a mounted drive —</option>
+        </select>
+        <input type="text" id="backupDestPath" placeholder="/media/pi/USB"
+               class="flex-1" style="min-width:180px"
+               oninput="backupDestPathChanged()">
+      </div>
+      <div id="backupDestStatus" style="margin-top:.35rem;font-size:.82rem;color:var(--muted)"></div>
+
+      <!-- Run Now -->
+      <h3 style="margin-top:1.5rem">Manual Backup</h3>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:.6rem">
+        Run a backup immediately to the selected destination.
+      </p>
+      <button class="btn-primary" onclick="runBackupNow()">▶ Run Backup Now</button>
+      <div id="backupRunResult" style="margin-top:.75rem"></div>
+
+      <!-- Scheduled Backup -->
+      <h3 style="margin-top:1.5rem">Scheduled Backup</h3>
+      <div class="settings-row" style="display:flex;flex-direction:column;gap:.85rem">
+        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.875rem">
+          <input type="checkbox" id="backupEnabled" onchange="backupScheduleChanged()">
+          <strong>Enable Scheduled Backup</strong>
+        </label>
+
+        <div id="backupScheduleFields" style="display:none;flex-direction:column;gap:.75rem">
+          <!-- Frequency -->
+          <div class="row gap-md" style="flex-wrap:wrap;align-items:flex-end">
+            <div class="form-group" style="margin:0;min-width:120px">
+              <label>Frequency</label>
+              <select id="backupFrequency" onchange="backupScheduleChanged()">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div class="form-group" id="backupDayOfWeekGroup" style="margin:0;min-width:120px;display:none">
+              <label>Day of Week</label>
+              <select id="backupDayOfWeek">
+                <option value="sun">Sunday</option>
+                <option value="mon">Monday</option>
+                <option value="tue">Tuesday</option>
+                <option value="wed">Wednesday</option>
+                <option value="thu">Thursday</option>
+                <option value="fri">Friday</option>
+                <option value="sat">Saturday</option>
+              </select>
+            </div>
+            <div class="form-group" id="backupDayOfMonthGroup" style="margin:0;min-width:120px;display:none">
+              <label>Day of Month</label>
+              <select id="backupDayOfMonth">
+                <option value="1">1st</option><option value="2">2nd</option>
+                <option value="3">3rd</option><option value="4">4th</option>
+                <option value="5">5th</option><option value="6">6th</option>
+                <option value="7">7th</option><option value="8">8th</option>
+                <option value="9">9th</option><option value="10">10th</option>
+                <option value="11">11th</option><option value="12">12th</option>
+                <option value="13">13th</option><option value="14">14th</option>
+                <option value="15">15th</option><option value="16">16th</option>
+                <option value="17">17th</option><option value="18">18th</option>
+                <option value="19">19th</option><option value="20">20th</option>
+                <option value="21">21st</option><option value="22">22nd</option>
+                <option value="23">23rd</option><option value="24">24th</option>
+                <option value="25">25th</option><option value="26">26th</option>
+                <option value="27">27th</option><option value="28">28th</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;min-width:100px">
+              <label>Time</label>
+              <input type="time" id="backupTime" value="02:00">
+            </div>
+          </div>
+
+          <div id="backupSchedDestNote" style="font-size:.82rem;color:var(--muted)">
+            Backup will be written to the destination selected above.
+          </div>
+        </div>
+
+        <div>
+          <button class="btn-primary btn-sm" onclick="saveBackupConfig()">Save Schedule</button>
+          <span id="backupSaveResult" style="margin-left:.75rem;font-size:.82rem"></span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -856,6 +980,27 @@
   </div>
   <div id="printPreviewBody">
     <div id="printPageContent" class="print-page"></div>
+  </div>
+</div>
+
+<!-- ── File Browser Modal ─────────────────────────────────────────────────── -->
+<div class="overlay" id="fileBrowserOverlay" style="display:none" onclick="closeOverlay('fileBrowserOverlay')">
+  <div class="modal" style="max-width:640px;width:95%" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3>Browse Files</h3>
+      <button class="close-btn" onclick="closeOverlay('fileBrowserOverlay')">✕</button>
+    </div>
+    <div style="padding:1rem">
+      <div id="fileBrowserPath" style="font-family:monospace;font-size:.82rem;color:var(--muted);margin-bottom:.5rem;word-break:break-all"></div>
+      <div id="fileBrowserList" style="max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)"></div>
+      <div style="margin-top:1rem;display:flex;gap:.5rem;justify-content:space-between;align-items:center">
+        <span style="font-size:.82rem;color:var(--muted)">Click a folder to open it, or select this folder as your backup destination.</span>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn-ghost btn-sm" onclick="closeOverlay('fileBrowserOverlay')">Cancel</button>
+          <button class="btn-primary btn-sm" onclick="selectBrowsedPath()">Use This Folder</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

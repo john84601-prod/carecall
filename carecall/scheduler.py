@@ -30,6 +30,7 @@ def init_scheduler(app):
     _register_midnight_rollover()
     _startup_missed_call_check()
     _register_sms_webhook()
+    _init_backup_job()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -656,3 +657,88 @@ def _schedule_next_emergency(session_id, delay_minutes):
         args=[session_id],
         id=job_id,
     )
+
+
+# ── Scheduled Backup ──────────────────────────────────────────────────────────
+
+def _init_backup_job():
+    """Load backup schedule from backup_config.json on startup."""
+    import json as _json
+    root = os.path.dirname(os.path.dirname(__file__))
+    config_path = os.path.join(root, 'backup_config.json')
+    try:
+        with open(config_path) as f:
+            config = _json.load(f)
+        update_backup_job(config)
+    except FileNotFoundError:
+        pass  # No config yet — no job to register
+    except Exception as e:
+        logger.warning(f"Could not init backup job: {e}")
+
+
+def update_backup_job(config):
+    """Register or remove the APScheduler cron job for scheduled backups."""
+    if not _scheduler:
+        return
+    job_id = 'scheduled_backup'
+    try:
+        _scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not config.get('enabled') or not config.get('destination'):
+        return
+
+    try:
+        hour, minute = str(config.get('time', '02:00')).split(':')
+        hour, minute = int(hour), int(minute)
+    except Exception:
+        hour, minute = 2, 0
+
+    freq = config.get('frequency', 'daily')
+    kwargs = dict(id=job_id, replace_existing=True, misfire_grace_time=3600)
+
+    if freq == 'weekly':
+        _scheduler.add_job(
+            _run_scheduled_backup, 'cron',
+            day_of_week=config.get('day_of_week', 'sun'),
+            hour=hour, minute=minute, **kwargs
+        )
+    elif freq == 'monthly':
+        _scheduler.add_job(
+            _run_scheduled_backup, 'cron',
+            day=int(config.get('day_of_month', 1)),
+            hour=hour, minute=minute, **kwargs
+        )
+    else:  # daily
+        _scheduler.add_job(
+            _run_scheduled_backup, 'cron',
+            hour=hour, minute=minute, **kwargs
+        )
+    logger.info(f"Scheduled backup job registered: {freq} at {hour:02d}:{minute:02d}")
+
+
+def _run_scheduled_backup():
+    """APScheduler callback — runs the backup to the configured destination."""
+    import json as _json
+    root = os.path.dirname(os.path.dirname(__file__))
+    config_path = os.path.join(root, 'backup_config.json')
+    try:
+        with open(config_path) as f:
+            config = _json.load(f)
+    except Exception as e:
+        logger.error(f"Scheduled backup: cannot read config: {e}")
+        return
+
+    destination = config.get('destination', '')
+    if not destination or not os.path.isdir(destination):
+        logger.error(f"Scheduled backup: destination not found: {destination!r}")
+        return
+
+    if _app:
+        with _app.app_context():
+            from carecall.routes.api import _do_backup
+            result = _do_backup(destination)
+            logger.info(f"Scheduled backup complete: {result['filename']} ({result['size']})")
+    else:
+        logger.error("Scheduled backup: no Flask app context available")

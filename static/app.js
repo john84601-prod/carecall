@@ -1506,6 +1506,8 @@ async function loadSettings() {
     document.getElementById('versionInfo').innerHTML =
       '<span style="color:var(--muted);font-size:.85rem">Version info unavailable</span>';
   }
+  // Load backup config
+  await loadBackupConfig();
 }
 
 function _renderVersionInfo(v, updateStatus) {
@@ -2373,4 +2375,273 @@ function discardRecording() {
   preview.src = '';
   document.getElementById('recordPreview').style.display = 'none';
   document.getElementById('recordName').value = '';
+}
+
+// ── Backup ──────────────────────────────────────────────────────────────────
+
+let _backupDrives = [];           // last drive list from server
+let _fileBrowserCurrentPath = ''; // current path open in file browser
+
+async function loadBackupDrives() {
+  const note = document.getElementById('driveRefreshNote');
+  note.textContent = 'Scanning…';
+  try {
+    const res = await fetch('/api/backup/usb-drives');
+    const data = await res.json();
+    _backupDrives = data.drives || [];
+    _renderBackupDrives(_backupDrives);
+    // Populate destination select
+    const sel = document.getElementById('backupDestSelect');
+    while (sel.options.length > 1) sel.remove(1);
+    _backupDrives.filter(d => d.mountpoint).forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.mountpoint;
+      opt.textContent = `${d.label || d.device} (${d.size}) — ${d.mountpoint}`;
+      sel.appendChild(opt);
+    });
+    note.textContent = _backupDrives.length
+      ? `${_backupDrives.length} drive(s) found`
+      : 'No USB drives detected';
+  } catch (e) {
+    note.textContent = 'Error scanning drives';
+  }
+}
+
+function _renderBackupDrives(drives) {
+  const el = document.getElementById('backupDriveList');
+  if (!drives.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">No removable drives detected.</span>';
+    return;
+  }
+  el.innerHTML = drives.map(d => `
+    <div class="backup-drive-card">
+      <div class="backup-drive-info">
+        <div class="backup-drive-label">💾 ${esc(d.label || d.device)}</div>
+        <div class="backup-drive-meta">
+          ${esc(d.device)} &nbsp;·&nbsp; ${esc(d.size)}
+          ${d.vendor || d.model ? ` &nbsp;·&nbsp; ${esc([d.vendor, d.model].filter(Boolean).join(' '))}` : ''}
+        </div>
+        ${d.mountpoint
+          ? `<div class="backup-drive-mount">Mounted at <code>${esc(d.mountpoint)}</code></div>`
+          : '<div class="backup-drive-mount" style="color:var(--orange)">Not mounted</div>'}
+      </div>
+      <div class="backup-drive-actions">
+        ${d.mountpoint
+          ? `<button class="btn-ghost btn-sm" onclick="openFileBrowser(${JSON.stringify(d.mountpoint)})">📂 Browse</button>`
+          : ''}
+        <button class="btn-danger btn-sm" onclick="confirmFormatDrive(${JSON.stringify(d.device)}, ${JSON.stringify(d.label || d.device)})">⚠️ Format exFAT</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function confirmFormatDrive(device, label) {
+  if (!confirm(
+    `⚠️  WARNING: This will ERASE ALL DATA on ${device} (${label}) and format it as exFAT.\n\n` +
+    `This cannot be undone.\n\nContinue?`
+  )) return;
+  if (!confirm(`Final confirmation: permanently erase ${device}?`)) return;
+  _doFormatDrive(device, label);
+}
+
+async function _doFormatDrive(device, label) {
+  const note = document.getElementById('driveRefreshNote');
+  note.textContent = `Formatting ${device}…`;
+  try {
+    const res = await fetch('/api/backup/format', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device, label: 'CareCallBak'})
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      note.textContent = `Format failed: ${data.error}`;
+      toast(`Format failed: ${data.error}`, 'error');
+    } else {
+      note.textContent = data.message || 'Format complete';
+      toast(data.message || 'Format complete', 'success');
+      setTimeout(loadBackupDrives, 2000);
+    }
+  } catch (e) {
+    note.textContent = `Error: ${e.message}`;
+    toast(`Format error: ${e.message}`, 'error');
+  }
+}
+
+// ── File browser ──────────────────────────────────────────────────────────
+
+function openFileBrowser(path) {
+  _fileBrowserCurrentPath = path;
+  document.getElementById('fileBrowserOverlay').style.display = 'flex';
+  _loadFileBrowserPath(path);
+}
+
+async function _loadFileBrowserPath(path) {
+  const listEl = document.getElementById('fileBrowserList');
+  const pathEl = document.getElementById('fileBrowserPath');
+  pathEl.textContent = path;
+  listEl.innerHTML = '<div style="padding:.75rem;color:var(--muted)">Loading…</div>';
+  try {
+    const res = await fetch(`/api/backup/browse?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      listEl.innerHTML = `<div style="padding:.75rem;color:var(--red)">${esc(data.error)}</div>`;
+      return;
+    }
+    _fileBrowserCurrentPath = data.path;
+    pathEl.textContent = data.path;
+    let html = '';
+    if (data.parent) {
+      html += `<div class="fb-row fb-dir" onclick="_loadFileBrowserPath(${JSON.stringify(data.parent)})">
+        <span class="fb-icon">📁</span><span class="fb-name">..</span><span class="fb-meta">Parent folder</span>
+      </div>`;
+    }
+    data.entries.forEach(e => {
+      if (e.is_dir) {
+        html += `<div class="fb-row fb-dir" onclick="_loadFileBrowserPath(${JSON.stringify(e.path)})">
+          <span class="fb-icon">📁</span>
+          <span class="fb-name">${esc(e.name)}</span>
+          <span class="fb-meta">${e.modified}</span>
+        </div>`;
+      } else {
+        html += `<div class="fb-row">
+          <span class="fb-icon">📄</span>
+          <span class="fb-name">${esc(e.name)}</span>
+          <span class="fb-meta">${_fmtBytes(e.size)} &nbsp; ${e.modified}</span>
+        </div>`;
+      }
+    });
+    listEl.innerHTML = html || '<div style="padding:.75rem;color:var(--muted)">Empty folder</div>';
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:.75rem;color:var(--red)">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function selectBrowsedPath() {
+  if (!_fileBrowserCurrentPath) return;
+  document.getElementById('backupDestPath').value = _fileBrowserCurrentPath;
+  document.getElementById('backupDestSelect').value = '';
+  document.getElementById('backupDestStatus').textContent = `Path set to: ${_fileBrowserCurrentPath}`;
+  closeOverlay('fileBrowserOverlay');
+}
+
+// ── Destination helpers ───────────────────────────────────────────────────
+
+function backupDestSelectChanged() {
+  const val = document.getElementById('backupDestSelect').value;
+  if (val) {
+    document.getElementById('backupDestPath').value = val;
+    document.getElementById('backupDestStatus').textContent = `Destination: ${val}`;
+  }
+}
+
+function backupDestPathChanged() {
+  document.getElementById('backupDestSelect').value = '';
+  const v = document.getElementById('backupDestPath').value.trim();
+  document.getElementById('backupDestStatus').textContent = v ? `Custom path: ${v}` : '';
+}
+
+function _getBackupDestination() {
+  return document.getElementById('backupDestPath').value.trim();
+}
+
+// ── Run backup now ────────────────────────────────────────────────────────
+
+async function runBackupNow() {
+  const dest = _getBackupDestination();
+  const resultEl = document.getElementById('backupRunResult');
+  if (!dest) {
+    resultEl.innerHTML = '<span style="color:var(--red)">Please select or enter a backup destination first.</span>';
+    return;
+  }
+  resultEl.innerHTML = '<span style="color:var(--muted)">Running backup…</span>';
+  try {
+    const res = await fetch('/api/backup/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({destination: dest})
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resultEl.innerHTML = `<span style="color:var(--red)">Backup failed: ${esc(data.error)}</span>`;
+    } else {
+      resultEl.innerHTML = `<span style="color:var(--green)">✔ Backup complete — <strong>${esc(data.filename)}</strong> (${esc(data.size)})</span>`;
+      toast('Backup complete!', 'success');
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+// ── Scheduled backup config ───────────────────────────────────────────────
+
+async function loadBackupConfig() {
+  try {
+    const res = await fetch('/api/backup/config');
+    const cfg = await res.json();
+    document.getElementById('backupEnabled').checked   = !!cfg.enabled;
+    document.getElementById('backupFrequency').value   = cfg.frequency   || 'daily';
+    document.getElementById('backupTime').value        = cfg.time        || '02:00';
+    document.getElementById('backupDayOfWeek').value   = cfg.day_of_week || 'sun';
+    document.getElementById('backupDayOfMonth').value  = String(cfg.day_of_month || 1);
+    if (cfg.destination) {
+      document.getElementById('backupDestPath').value = cfg.destination;
+      document.getElementById('backupDestStatus').textContent = `Saved destination: ${cfg.destination}`;
+    }
+    _updateBackupScheduleUI();
+  } catch (e) {
+    console.warn('Could not load backup config:', e);
+  }
+}
+
+function backupScheduleChanged() {
+  _updateBackupScheduleUI();
+}
+
+function _updateBackupScheduleUI() {
+  const enabled = document.getElementById('backupEnabled').checked;
+  document.getElementById('backupScheduleFields').style.display = enabled ? 'flex' : 'none';
+  const freq = document.getElementById('backupFrequency').value;
+  document.getElementById('backupDayOfWeekGroup').style.display  = freq === 'weekly'  ? '' : 'none';
+  document.getElementById('backupDayOfMonthGroup').style.display = freq === 'monthly' ? '' : 'none';
+}
+
+async function saveBackupConfig() {
+  const dest = _getBackupDestination();
+  const resultEl = document.getElementById('backupSaveResult');
+  resultEl.textContent = 'Saving…';
+  const payload = {
+    enabled:      document.getElementById('backupEnabled').checked,
+    destination:  dest,
+    frequency:    document.getElementById('backupFrequency').value,
+    time:         document.getElementById('backupTime').value,
+    day_of_week:  document.getElementById('backupDayOfWeek').value,
+    day_of_month: parseInt(document.getElementById('backupDayOfMonth').value, 10),
+  };
+  try {
+    const res = await fetch('/api/backup/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(data.error)}</span>`;
+    } else {
+      resultEl.innerHTML = '<span style="color:var(--green)">✔ Schedule saved</span>';
+      setTimeout(() => { resultEl.textContent = ''; }, 4000);
+      toast('Backup schedule saved', 'success');
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+// ── Byte formatter helper ─────────────────────────────────────────────────
+
+function _fmtBytes(n) {
+  if (n == null) return '';
+  if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n > 1024)    return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
 }
