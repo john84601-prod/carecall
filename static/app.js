@@ -1547,7 +1547,7 @@ function renderMessages() {
       ? `<strong>${esc(m.matched_client_name)}</strong> <span style="color:var(--muted)">${esc(m.from_number)}</span>`
       : `<strong>${esc(m.from_number || 'Unknown')}</strong>`;
     const when  = new Date(m.received_at).toLocaleString();
-    const dur   = m.duration_seconds ? `${m.duration_seconds}s` : '—';
+    const dur   = m.duration_seconds > 0 ? `${m.duration_seconds}s` : '—';
     const unreadDot = m.listened ? '' : '<span class="msg-unread-dot"></span>';
     return `
     <div class="msg-card${m.listened ? '' : ' msg-unread'}" id="msgCard${m.id}">
@@ -1558,7 +1558,7 @@ function renderMessages() {
       ${m.recording_sid ? `
       <audio controls preload="none" style="width:100%;margin:.5rem 0"
              src="/api/inbound-messages/${m.id}/audio"
-             onplay="markMsgListened(${m.id})"></audio>` : ''}
+             onplay="markMsgListened(${m.id})" onended="loadMessages()"></audio>` : ''}
       <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;flex-wrap:wrap">
         ${!m.listened ? `<button class="btn-ghost btn-sm" onclick="markMsgListened(${m.id})">Mark read</button>` : ''}
         <button class="btn-ghost btn-sm" style="color:var(--red)" onclick="deleteMsg(${m.id})">Delete</button>

@@ -850,9 +850,7 @@ def delete_inbound_message(msg_id):
     # Delete the Twilio recording too so we don't accumulate storage
     if msg.recording_sid:
         try:
-            from twilio.rest import Client as _TwilioClient
-            tw = _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
-            tw.recordings(msg.recording_sid).delete()
+            _get_twilio_client().recordings(msg.recording_sid).delete()
         except Exception as e:
             current_app.logger.warning(f"Could not delete Twilio recording {msg.recording_sid}: {e}")
     db.session.delete(msg)
@@ -872,17 +870,33 @@ def proxy_inbound_audio(msg_id):
     auth_token  = os.getenv('TWILIO_AUTH_TOKEN', '')
     url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{msg.recording_sid}.mp3"
     try:
-        r = _req.get(url, auth=(account_sid, auth_token), stream=True, timeout=15)
+        r = _req.get(url, auth=(account_sid, auth_token), timeout=30)
         if r.status_code != 200:
             return jsonify({'error': 'Recording not available'}), 502
+        audio = r.content
+        # Backfill duration if it was 0 when the recording callback fired
+        if not msg.duration_seconds and audio:
+            try:
+                tw = _get_twilio_client()
+                rec = tw.recordings(msg.recording_sid).fetch()
+                if rec.duration:
+                    msg.duration_seconds = int(rec.duration)
+                    db.session.commit()
+            except Exception:
+                pass
         return _Resp(
-            r.iter_content(chunk_size=8192),
+            audio,
             content_type='audio/mpeg',
-            headers={'Accept-Ranges': 'bytes'},
+            headers={'Content-Length': str(len(audio)), 'Accept-Ranges': 'none'},
         )
     except Exception as e:
         current_app.logger.error(f"Audio proxy error for {msg.recording_sid}: {e}")
         return jsonify({'error': 'Could not fetch recording'}), 502
+
+
+def _get_twilio_client():
+    from twilio.rest import Client as _TwilioClient
+    return _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
 
 
 @api_bp.route('/status', methods=['GET'])
