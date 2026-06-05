@@ -1063,12 +1063,16 @@ def backup_format():
 
         # ── Attempt 2: sudo mkdir + sudo mount to /media/<user>/<label> ────
         if not mountpoint:
-            import getpass
+            import getpass, pwd
             user = getpass.getuser()
-            mp = f'/media/{user}/{label}'
+            pw   = pwd.getpwnam(user)
+            mp   = f'/media/{user}/{label}'
             subprocess.run(['sudo', 'mkdir', '-p', mp], capture_output=True)
+            # Pass uid/gid so the service account owns the filesystem (not root)
             r2 = subprocess.run(
-                ['sudo', 'mount', '-t', 'exfat', device, mp],
+                ['sudo', 'mount', '-t', 'exfat',
+                 '-o', f'uid={pw.pw_uid},gid={pw.pw_gid}',
+                 device, mp],
                 capture_output=True, text=True, timeout=15
             )
             mount_log.append(f'sudo mount: rc={r2.returncode} {(r2.stderr or r2.stdout or "").strip()}')
