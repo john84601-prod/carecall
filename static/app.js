@@ -66,6 +66,9 @@ function _renderSystemStatus(s) {
     s.twilio_configured,
     s.twilio_configured ? 'Twilio' : 'Twilio ✗ Not Configured');
 
+  const pausedItem = document.getElementById('sysPausedItem');
+  if (pausedItem) pausedItem.style.display = s.calls_paused ? '' : 'none';
+
   const u = document.getElementById('sysUptime');
   if (u) u.textContent = 'Up ' + (s.uptime || '—');
 
@@ -1508,6 +1511,53 @@ async function loadSettings() {
   }
   // Load backup config
   await loadBackupConfig();
+  // Load call pause state
+  await loadCallsPaused();
+}
+
+async function loadCallsPaused() {
+  try {
+    const r = await api('GET', '/calls/paused');
+    _renderCallsPaused(r.paused);
+  } catch(e) {
+    const s = document.getElementById('pauseCallsStatus');
+    if (s) s.textContent = 'Unable to load status.';
+  }
+}
+
+function _renderCallsPaused(paused) {
+  const statusEl = document.getElementById('pauseCallsStatus');
+  const btnEl    = document.getElementById('pauseCallsBtn');
+  const noteEl   = document.getElementById('pauseCallsNote');
+  if (!statusEl || !btnEl) return;
+
+  if (paused) {
+    statusEl.innerHTML = '<span style="color:var(--orange);font-weight:600">⏸ Calls are currently PAUSED</span>';
+    btnEl.textContent  = 'Resume Calls';
+    btnEl.className    = 'btn-primary';
+    if (noteEl) noteEl.textContent = 'No outgoing calls will be made until you resume.';
+  } else {
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">▶ Calls are active</span>';
+    btnEl.textContent  = 'Pause Calls';
+    btnEl.className    = 'btn-ghost';
+    if (noteEl) noteEl.textContent = '';
+  }
+}
+
+async function toggleCallsPause() {
+  const btn = document.getElementById('pauseCallsBtn');
+  const currentlyPaused = btn && btn.textContent.trim() === 'Resume Calls';
+  try {
+    if (btn) btn.disabled = true;
+    const r = await api('POST', '/calls/paused', { paused: !currentlyPaused });
+    _renderCallsPaused(r.paused);
+    loadSystemStatus(); // refresh status bar immediately
+    toast(r.paused ? 'Calls paused.' : 'Calls resumed.', r.paused ? '' : 'success');
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function _renderVersionInfo(v, updateStatus) {

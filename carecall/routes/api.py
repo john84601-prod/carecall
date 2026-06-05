@@ -10,7 +10,8 @@ from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact,
 
 # Project root (two levels up from this file: routes/ → carecall/ → project/)
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_BACKUP_CONFIG_PATH = os.path.join(_APP_ROOT, 'backup_config.json')
+_BACKUP_CONFIG_PATH  = os.path.join(_APP_ROOT, 'backup_config.json')
+_SYSTEM_CONFIG_PATH  = os.path.join(_APP_ROOT, 'system_config.json')
 
 api_bp = Blueprint('api', __name__)
 
@@ -852,15 +853,32 @@ def get_system_status():
     # ── Server time (local) ────────────────────────────────────────────────
     server_time = _dt.now().strftime('%a, %b %-d, %Y  %-I:%M %p')
 
+    calls_paused = _load_system_config().get('calls_paused', False)
+
     return jsonify({
         'scheduler_running': scheduler_ok,
         'public_url':        public_url,
         'public_url_ok':     url_ok,
         'twilio_configured': twilio_ok,
+        'calls_paused':      calls_paused,
         'uptime':            uptime,
         'server_time':       server_time,
-        'all_ok':            scheduler_ok and url_ok and twilio_ok,
+        'all_ok':            scheduler_ok and url_ok and twilio_ok and not calls_paused,
     })
+
+
+@api_bp.route('/calls/paused', methods=['GET'])
+def get_calls_paused():
+    return jsonify({'paused': _load_system_config().get('calls_paused', False)})
+
+
+@api_bp.route('/calls/paused', methods=['POST'])
+def set_calls_paused():
+    data = request.get_json() or {}
+    cfg = _load_system_config()
+    cfg['calls_paused'] = bool(data.get('paused', False))
+    _save_system_config(cfg)
+    return jsonify({'success': True, 'paused': cfg['calls_paused']})
 
 
 @api_bp.route('/version', methods=['GET'])
@@ -1131,6 +1149,21 @@ def save_backup_config():
     except Exception as e:
         current_app.logger.warning(f"Backup scheduler update failed: {e}")
     return jsonify({'success': True})
+
+
+# ── System config helpers ──────────────────────────────────────────────────────
+
+def _load_system_config():
+    try:
+        with open(_SYSTEM_CONFIG_PATH) as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_system_config(cfg):
+    with open(_SYSTEM_CONFIG_PATH, 'w') as f:
+        _json.dump(cfg, f, indent=2)
 
 
 # ── Backup helpers ─────────────────────────────────────────────────────────────

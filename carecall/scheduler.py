@@ -249,6 +249,10 @@ def _fire_reminder(schedule_id):
     """Scheduler entry point — creates a ReminderSession and fires the first attempt."""
     with _app.app_context():
         from carecall.models import Schedule, ReminderSession, db
+        from carecall.routes.api import _load_system_config
+        if _load_system_config().get('calls_paused', False):
+            logger.info(f"Calls paused — skipping reminder for schedule {schedule_id}")
+            return
 
         schedule = db.session.get(Schedule, schedule_id)
         if not schedule or not schedule.active or not schedule.client.active:
@@ -383,6 +387,10 @@ def _schedule_reminder_retry(session_id, delay_minutes):
 def _fire_wellness_check(schedule_id):
     with _app.app_context():
         from carecall.models import Schedule, WellnessSession, db
+        from carecall.routes.api import _load_system_config
+        if _load_system_config().get('calls_paused', False):
+            logger.info(f"Calls paused — skipping wellness check for schedule {schedule_id}")
+            return
 
         schedule = db.session.get(Schedule, schedule_id)
         if not schedule or not schedule.active or not schedule.client.active:

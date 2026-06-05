@@ -1165,8 +1165,9 @@ hr { border: none; border-top: 1px solid var(--border); }
 .sys-item  { display: flex; align-items: center; gap: .28rem; white-space: nowrap; }
 .sys-sep   { width: 1px; height: 11px; background: rgba(255,255,255,.22); flex-shrink: 0; }
 .sys-dot   { width: 7px; height: 7px; border-radius: 50%; background: #666; flex-shrink: 0; transition: background .3s; }
-.sys-ok    { background: #45d882; }
-.sys-err   { background: #ff5f5f; }
+.sys-ok     { background: #45d882; }
+.sys-err    { background: #ff5f5f; }
+.sys-paused { background: #f5a623; }
 #sysUptime     { color: rgba(255,255,255,.6); }
 #sysServerTime { color: rgba(255,255,255,.85); font-variant-numeric: tabular-nums; }
 

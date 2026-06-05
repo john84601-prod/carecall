@@ -47,6 +47,11 @@
       <span class="sys-dot" id="sysDotTwilio"></span>
       <span id="sysLabelTwilio">Twilio</span>
     </span>
+    <span class="sys-sep"></span>
+    <span class="sys-item" id="sysPausedItem" style="display:none">
+      <span class="sys-dot sys-paused" id="sysDotPaused"></span>
+      <span id="sysLabelPaused">Calls Paused</span>
+    </span>
   </div>
   <div id="sysStatusRight">
     <span id="sysUptime">Up —</span>
@@ -459,6 +464,15 @@
         <button class="btn-primary" onclick="sendTestCall()">Call Now</button>
       </div>
       <div id="testResult" style="margin-top:.75rem"></div>
+
+      <!-- ── Pause Calls ───────────────────────────────────────────── -->
+      <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Call Control</h2>
+      <p>Temporarily suspend all outgoing calls without changing any schedules. Scheduled jobs will still fire on time but will be silently skipped until calls are resumed.</p>
+      <div id="pauseCallsPanel" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:.75rem">
+        <div id="pauseCallsStatus" style="font-size:.9rem;color:var(--muted)">Loading…</div>
+        <button id="pauseCallsBtn" class="btn-primary" onclick="toggleCallsPause()" style="min-width:140px">—</button>
+      </div>
+      <div id="pauseCallsNote" style="margin-top:.6rem;font-size:.82rem;color:var(--muted)"></div>
 
       <!-- ── Backup ─────────────────────────────────────────────────── -->
       <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Backup</h2>
