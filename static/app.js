@@ -1517,6 +1517,33 @@ async function loadSettings() {
   await loadBackupConfig();
   // Load call pause state
   await loadCallsPaused();
+  // Load voice setting
+  await loadVoiceSetting();
+}
+
+// ── TTS voice setting ─────────────────────────────────────────────────────────
+
+async function loadVoiceSetting() {
+  try {
+    const r = await api('GET', '/voice');
+    const sel = document.getElementById('voiceSelect');
+    if (sel && r.voice) sel.value = r.voice;
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveVoiceSetting() {
+  const sel      = document.getElementById('voiceSelect');
+  const statusEl = document.getElementById('voiceSaveStatus');
+  if (!sel) return;
+  try {
+    await api('POST', '/voice', { voice: sel.value });
+    statusEl.textContent = 'Saved.';
+    statusEl.style.color = 'var(--green)';
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  } catch(e) {
+    statusEl.textContent = e.message;
+    statusEl.style.color = 'var(--red)';
+  }
 }
 
 // ── Inbound greeting configurator ────────────────────────────────────────────

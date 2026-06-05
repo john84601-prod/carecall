@@ -470,6 +470,43 @@
       </div>
       <div id="testResult" style="margin-top:.75rem"></div>
 
+      <!-- ── TTS Voice ─────────────────────────────────────────────── -->
+      <h3 style="margin-top:1.5rem">TTS Voice</h3>
+      <p>Voice used for all automated calls — reminders, wellness checks, and emergency notifications.</p>
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <select id="voiceSelect" style="padding:.45rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.875rem;background:#fff;min-width:220px">
+          <optgroup label="American English">
+            <option value="Polly.Danielle-Neural">Danielle — Female</option>
+            <option value="Polly.Gregory-Neural">Gregory — Male</option>
+            <option value="Polly.Joanna-Neural">Joanna — Female</option>
+            <option value="Polly.Joey-Neural">Joey — Male</option>
+            <option value="Polly.Kendra-Neural">Kendra — Female</option>
+            <option value="Polly.Kimberly-Neural">Kimberly — Female</option>
+            <option value="Polly.Matthew-Neural">Matthew — Male</option>
+            <option value="Polly.Ruth-Neural">Ruth — Female</option>
+            <option value="Polly.Salli-Neural">Salli — Female</option>
+            <option value="Polly.Stephen-Neural">Stephen — Male</option>
+            <option value="Polly.Ivy-Neural">Ivy — Female (child)</option>
+            <option value="Polly.Justin-Neural">Justin — Male (child)</option>
+            <option value="Polly.Kevin-Neural">Kevin — Male (child)</option>
+          </optgroup>
+          <optgroup label="British English">
+            <option value="Polly.Amy-Neural">Amy — Female</option>
+            <option value="Polly.Arthur-Neural">Arthur — Male</option>
+            <option value="Polly.Brian-Neural">Brian — Male</option>
+            <option value="Polly.Emma-Neural">Emma — Female</option>
+          </optgroup>
+          <optgroup label="Australian English">
+            <option value="Polly.Olivia-Neural">Olivia — Female</option>
+          </optgroup>
+        </select>
+        <button class="btn-primary btn-sm" onclick="saveVoiceSetting()">Save</button>
+        <span id="voiceSaveStatus" style="font-size:.82rem;color:var(--muted)"></span>
+      </div>
+      <p style="color:var(--muted);font-size:.82rem;margin-top:.5rem">
+        Use the Test Call below to hear the selected voice before saving.
+      </p>
+
       <!-- ── Pause Calls ───────────────────────────────────────────── -->
       <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Call Control</h2>
       <p>Temporarily suspend all outgoing calls without changing any schedules. Scheduled jobs will still fire on time but will be silently skipped until calls are resumed.</p>

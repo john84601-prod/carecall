@@ -814,6 +814,42 @@ def report_calls():
 
 # ── Settings & test ────────────────────────────────────────────────────────────
 
+# ── TTS voice setting ──────────────────────────────────────────────────────────
+
+_ALLOWED_VOICES = [
+    # American English
+    'Polly.Danielle-Neural', 'Polly.Gregory-Neural', 'Polly.Ivy-Neural',
+    'Polly.Joanna-Neural',   'Polly.Joey-Neural',    'Polly.Justin-Neural',
+    'Polly.Kendra-Neural',   'Polly.Kevin-Neural',   'Polly.Kimberly-Neural',
+    'Polly.Matthew-Neural',  'Polly.Ruth-Neural',    'Polly.Salli-Neural',
+    'Polly.Stephen-Neural',
+    # British English
+    'Polly.Amy-Neural', 'Polly.Arthur-Neural', 'Polly.Brian-Neural', 'Polly.Emma-Neural',
+    # Australian English
+    'Polly.Olivia-Neural',
+]
+
+_DEFAULT_VOICE = 'Polly.Joanna-Neural'
+
+
+@api_bp.route('/voice', methods=['GET'])
+def get_voice():
+    cfg = _load_system_config()
+    return jsonify({'voice': cfg.get('tts_voice', _DEFAULT_VOICE)})
+
+
+@api_bp.route('/voice', methods=['POST'])
+def set_voice():
+    data  = request.get_json() or {}
+    voice = str(data.get('voice', _DEFAULT_VOICE))
+    if voice not in _ALLOWED_VOICES:
+        return jsonify({'error': 'Invalid voice selection'}), 400
+    cfg = _load_system_config()
+    cfg['tts_voice'] = voice
+    _save_system_config(cfg)
+    return jsonify({'success': True, 'voice': voice})
+
+
 # ── Inbound greeting config ────────────────────────────────────────────────────
 
 _DEFAULT_GREETING_SCRIPT = (

@@ -49,7 +49,14 @@ def _public_url():
 
 
 def _voice():
-    """TTS voice for all synthesised speech. Override with TWILIO_VOICE in .env."""
+    """TTS voice — reads system_config.json, falls back to TWILIO_VOICE env var, then default."""
+    try:
+        from carecall.routes.api import _load_system_config
+        v = _load_system_config().get('tts_voice')
+        if v:
+            return v
+    except Exception:
+        pass
     return os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural')
 
 
