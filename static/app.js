@@ -2381,6 +2381,7 @@ function discardRecording() {
 
 let _backupDrives = [];           // last drive list from server
 let _fileBrowserCurrentPath = ''; // current path open in file browser
+let _fileBrowserEntries = [];     // flat list: [{path, is_dir}, ...] indexed by onclick
 
 async function loadBackupDrives() {
   const note = document.getElementById('driveRefreshNote');
@@ -2459,7 +2460,7 @@ function confirmFormatDrive(device, label) {
 
 async function _doFormatDrive(device, label) {
   const note = document.getElementById('driveRefreshNote');
-  note.textContent = `Formatting ${device}…`;
+  note.textContent = `Formatting ${device}… (this may take a moment)`;
   try {
     const res = await fetch('/api/backup/format', {
       method: 'POST',
@@ -2471,9 +2472,18 @@ async function _doFormatDrive(device, label) {
       note.textContent = `Format failed: ${data.error}`;
       toast(`Format failed: ${data.error}`, 'error');
     } else {
-      note.textContent = data.message || 'Format complete';
-      toast(data.message || 'Format complete', 'success');
-      setTimeout(loadBackupDrives, 2000);
+      const mp = data.mountpoint;
+      note.textContent = mp
+        ? `Format complete — mounted at ${mp}`
+        : data.message || 'Format complete (refreshing…)';
+      toast(mp ? `Formatted and mounted at ${mp}` : 'Format complete', 'success');
+      // Refresh drive list; if we got a mountpoint back, auto-select it
+      await loadBackupDrives();
+      if (mp) {
+        document.getElementById('backupDestPath').value = mp;
+        document.getElementById('backupDestSelect').value = mp;
+        document.getElementById('backupDestStatus').textContent = `Destination set to: ${mp}`;
+      }
     }
   } catch (e) {
     note.textContent = `Error: ${e.message}`;
@@ -2503,15 +2513,25 @@ async function _loadFileBrowserPath(path) {
     }
     _fileBrowserCurrentPath = data.path;
     pathEl.textContent = data.path;
+
+    // Build a flat index array so onclick handlers use integers, not path strings
+    _fileBrowserEntries = [];
     let html = '';
+
     if (data.parent) {
-      html += `<div class="fb-row fb-dir" onclick="_loadFileBrowserPath(${JSON.stringify(data.parent)})">
-        <span class="fb-icon">📁</span><span class="fb-name">..</span><span class="fb-meta">Parent folder</span>
+      const idx = _fileBrowserEntries.length;
+      _fileBrowserEntries.push({ path: data.parent, is_dir: true });
+      html += `<div class="fb-row fb-dir" onclick="_fbNavigate(${idx})">
+        <span class="fb-icon">📁</span><span class="fb-name">..</span>
+        <span class="fb-meta">Parent folder</span>
       </div>`;
     }
+
     data.entries.forEach(e => {
+      const idx = _fileBrowserEntries.length;
+      _fileBrowserEntries.push({ path: e.path, is_dir: e.is_dir });
       if (e.is_dir) {
-        html += `<div class="fb-row fb-dir" onclick="_loadFileBrowserPath(${JSON.stringify(e.path)})">
+        html += `<div class="fb-row fb-dir" onclick="_fbNavigate(${idx})">
           <span class="fb-icon">📁</span>
           <span class="fb-name">${esc(e.name)}</span>
           <span class="fb-meta">${e.modified}</span>
@@ -2524,10 +2544,16 @@ async function _loadFileBrowserPath(path) {
         </div>`;
       }
     });
+
     listEl.innerHTML = html || '<div style="padding:.75rem;color:var(--muted)">Empty folder</div>';
   } catch (err) {
     listEl.innerHTML = `<div style="padding:.75rem;color:var(--red)">Error: ${esc(err.message)}</div>`;
   }
+}
+
+function _fbNavigate(idx) {
+  const entry = _fileBrowserEntries[idx];
+  if (entry && entry.is_dir) _loadFileBrowserPath(entry.path);
 }
 
 function selectBrowsedPath() {

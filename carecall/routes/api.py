@@ -1043,8 +1043,25 @@ def backup_format():
         if result.returncode != 0:
             err = (result.stderr or result.stdout or 'Format failed').strip()
             return jsonify({'error': err}), 500
-        return jsonify({'success': True,
-                        'message': f'{device} formatted as exFAT (label: {label})'})
+
+        # Re-mount via udisksctl (works without sudo on Pi, respects udev automount rules)
+        mount_result = subprocess.run(
+            ['udisksctl', 'mount', '-b', device],
+            capture_output=True, text=True, timeout=15
+        )
+        mountpoint = None
+        if mount_result.returncode == 0:
+            # Output is like: "Mounted /dev/sdb1 at /media/pi/CareCallBak"
+            import re as _re
+            m = _re.search(r'at\s+(\S+)', mount_result.stdout)
+            if m:
+                mountpoint = m.group(1).rstrip('.')
+
+        return jsonify({
+            'success':    True,
+            'message':    f'{device} formatted as exFAT (label: {label})',
+            'mountpoint': mountpoint,
+        })
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Format timed out after 2 minutes'}), 500
     except Exception as e:
