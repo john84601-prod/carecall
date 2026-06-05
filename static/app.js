@@ -2413,7 +2413,8 @@ function _renderBackupDrives(drives) {
     el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">No removable drives detected.</span>';
     return;
   }
-  el.innerHTML = drives.map(d => `
+  // Use index-based onclick to avoid quote-escaping issues with paths in HTML attributes
+  el.innerHTML = drives.map((d, i) => `
     <div class="backup-drive-card">
       <div class="backup-drive-info">
         <div class="backup-drive-label">💾 ${esc(d.label || d.device)}</div>
@@ -2427,12 +2428,24 @@ function _renderBackupDrives(drives) {
       </div>
       <div class="backup-drive-actions">
         ${d.mountpoint
-          ? `<button class="btn-ghost btn-sm" onclick="openFileBrowser(${JSON.stringify(d.mountpoint)})">📂 Browse</button>`
+          ? `<button class="btn-ghost btn-sm" onclick="_backupBrowseDrive(${i})">📂 Browse</button>`
           : ''}
-        <button class="btn-danger btn-sm" onclick="confirmFormatDrive(${JSON.stringify(d.device)}, ${JSON.stringify(d.label || d.device)})">⚠️ Format exFAT</button>
+        <button class="btn-danger btn-sm" onclick="_backupFormatDrive(${i})">⚠️ Format exFAT</button>
       </div>
     </div>
   `).join('');
+}
+
+// Index-based wrappers so onclick attributes never contain quotes from path strings
+function _backupBrowseDrive(i) {
+  const d = _backupDrives[i];
+  if (d && d.mountpoint) openFileBrowser(d.mountpoint);
+}
+
+function _backupFormatDrive(i) {
+  const d = _backupDrives[i];
+  if (!d) return;
+  confirmFormatDrive(d.device, d.label || d.device);
 }
 
 function confirmFormatDrive(device, label) {
