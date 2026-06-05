@@ -862,7 +862,8 @@ def delete_inbound_message(msg_id):
 def proxy_inbound_audio(msg_id):
     """Proxy the Twilio recording so credentials stay server-side."""
     import requests as _req
-    from flask import Response as _Resp
+    from io import BytesIO
+    from flask import send_file
     msg = db.session.get(InboundMessage, msg_id)
     if not msg or not msg.recording_sid:
         return jsonify({'error': 'Not found'}), 404
@@ -872,23 +873,21 @@ def proxy_inbound_audio(msg_id):
     try:
         r = _req.get(url, auth=(account_sid, auth_token), timeout=30)
         if r.status_code != 200:
+            current_app.logger.error(f"Twilio returned {r.status_code} for recording {msg.recording_sid}")
             return jsonify({'error': 'Recording not available'}), 502
         audio = r.content
         # Backfill duration if it was 0 when the recording callback fired
         if not msg.duration_seconds and audio:
             try:
-                tw = _get_twilio_client()
-                rec = tw.recordings(msg.recording_sid).fetch()
+                rec = _get_twilio_client().recordings(msg.recording_sid).fetch()
                 if rec.duration:
                     msg.duration_seconds = int(rec.duration)
                     db.session.commit()
             except Exception:
                 pass
-        return _Resp(
-            audio,
-            content_type='audio/mpeg',
-            headers={'Content-Length': str(len(audio)), 'Accept-Ranges': 'none'},
-        )
+        # send_file with BytesIO lets Werkzeug handle Range requests,
+        # which browsers require to play audio via the <audio> element.
+        return send_file(BytesIO(audio), mimetype='audio/mpeg', download_name='message.mp3')
     except Exception as e:
         current_app.logger.error(f"Audio proxy error for {msg.recording_sid}: {e}")
         return jsonify({'error': 'Could not fetch recording'}), 502
