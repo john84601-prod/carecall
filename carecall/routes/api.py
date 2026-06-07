@@ -40,6 +40,8 @@ def create_client():
         zip_code=data.get('zip_code', '').strip(),
         birthday=_parse_date(data.get('birthday')),
         notes=data.get('notes', ''),
+        mailers=bool(data.get('mailers', True)),
+        bad_address=bool(data.get('bad_address', False)),
     )
     db.session.add(client)
     db.session.commit()
@@ -65,8 +67,10 @@ def update_client(client_id):
     client.zip_code  = data.get('zip_code',  client.zip_code).strip()
     if 'birthday' in data:
         client.birthday = _parse_date(data['birthday'])
-    client.notes    = data.get('notes',    client.notes)
-    client.active   = data.get('active',   client.active)
+    client.notes       = data.get('notes',       client.notes)
+    client.active      = data.get('active',      client.active)
+    if 'mailers'     in data: client.mailers     = bool(data['mailers'])
+    if 'bad_address' in data: client.bad_address = bool(data['bad_address'])
     db.session.commit()
     return jsonify(client.to_dict())
 

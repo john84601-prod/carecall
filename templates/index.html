@@ -853,6 +853,15 @@
             <input type="text" id="clientZip" maxlength="10" placeholder="12345">
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;margin-bottom:.85rem">
+          <label style="display:flex;align-items:center;gap:.45rem;font-size:.875rem;cursor:pointer;user-select:none">
+            <input type="checkbox" id="clientMailers"> Mailers
+          </label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-size:.875rem;cursor:pointer;user-select:none">
+            <input type="checkbox" id="clientBadAddress">
+            <span style="color:var(--red);font-weight:500">Bad Address</span>
+          </label>
+        </div>
         <div style="display:flex;justify-content:flex-end">
           <button type="button" class="btn-primary btn-sm"
             onclick="saveClientAddress()">Save Address</button>

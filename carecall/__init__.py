@@ -67,9 +67,27 @@ def create_app():
         _migrate_emergency_contact_can_text()
         _migrate_wellness_session_acknowledged_by()
         _migrate_inbound_messages()
+        _migrate_client_mailers_fields()
         _migrate_audio_files_register(app)
 
     return app
+
+
+def _migrate_client_mailers_fields():
+    """Add mailers and bad_address columns to clients if they don't exist yet."""
+    from sqlalchemy import text, inspect
+    engine = db.engine
+    existing = [c['name'] for c in inspect(engine).get_columns('clients')]
+    with engine.connect() as conn:
+        if 'mailers' not in existing:
+            conn.execute(text(
+                "ALTER TABLE clients ADD COLUMN mailers BOOLEAN NOT NULL DEFAULT 1"
+            ))
+        if 'bad_address' not in existing:
+            conn.execute(text(
+                "ALTER TABLE clients ADD COLUMN bad_address BOOLEAN NOT NULL DEFAULT 0"
+            ))
+        conn.commit()
 
 
 def _migrate_inbound_messages():

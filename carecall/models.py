@@ -16,6 +16,8 @@ class Client(db.Model):
     zip_code = db.Column(db.String(10), default='')
     birthday = db.Column(db.Date, nullable=True)
     active = db.Column(db.Boolean, default=True)
+    mailers     = db.Column(db.Boolean, default=True)
+    bad_address = db.Column(db.Boolean, default=False)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -47,7 +49,9 @@ class Client(db.Model):
             'state': self.state,
             'zip_code': self.zip_code,
             'birthday': self.birthday.isoformat() if self.birthday else None,
-            'active': self.active,
+            'active':      self.active,
+            'mailers':     self.mailers,
+            'bad_address': self.bad_address,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() + 'Z',
             'emergency_contacts': [c.to_dict() for c in self.emergency_contacts],

@@ -479,6 +479,8 @@ function showClientModal(client) {
   document.getElementById('clientCity').value = '';
   document.getElementById('clientState').value = '';
   document.getElementById('clientZip').value = '';
+  document.getElementById('clientMailers').checked = true;
+  document.getElementById('clientBadAddress').checked = false;
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
   document.getElementById('clientTabsSection').style.display = 'none';
@@ -506,6 +508,8 @@ async function editClient(id) {
   document.getElementById('clientCity').value = c.city || '';
   document.getElementById('clientState').value = c.state || '';
   document.getElementById('clientZip').value = c.zip_code || '';
+  document.getElementById('clientMailers').checked    = c.mailers !== false;
+  document.getElementById('clientBadAddress').checked = !!c.bad_address;
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
   document.getElementById('clientTabsSection').style.display = '';
@@ -531,8 +535,10 @@ async function saveClient(e) {
     city:       document.getElementById('clientCity').value.trim(),
     state:      document.getElementById('clientState').value.trim().toUpperCase(),
     zip_code:   document.getElementById('clientZip').value.trim(),
-    notes:      document.getElementById('clientNotes').value.trim(),
-    active:     document.getElementById('clientActive').checked,
+    notes:       document.getElementById('clientNotes').value.trim(),
+    active:      document.getElementById('clientActive').checked,
+    mailers:     document.getElementById('clientMailers').checked,
+    bad_address: document.getElementById('clientBadAddress').checked,
   };
   try {
     if (id) {
@@ -580,11 +586,13 @@ async function saveClientAddress() {
   if (!currentClientId) return;
   try {
     await api('PUT', `/clients/${currentClientId}`, {
-      address1: document.getElementById('clientAddress1').value.trim(),
-      address2: document.getElementById('clientAddress2').value.trim(),
-      city:     document.getElementById('clientCity').value.trim(),
-      state:    document.getElementById('clientState').value.trim().toUpperCase(),
-      zip_code: document.getElementById('clientZip').value.trim(),
+      address1:    document.getElementById('clientAddress1').value.trim(),
+      address2:    document.getElementById('clientAddress2').value.trim(),
+      city:        document.getElementById('clientCity').value.trim(),
+      state:       document.getElementById('clientState').value.trim().toUpperCase(),
+      zip_code:    document.getElementById('clientZip').value.trim(),
+      mailers:     document.getElementById('clientMailers').checked,
+      bad_address: document.getElementById('clientBadAddress').checked,
     });
     await loadClients();
     toast('Address saved', 'success');
