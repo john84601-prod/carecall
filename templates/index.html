@@ -384,6 +384,36 @@
         </div>
       </div>
 
+      <!-- Client Address Report -->
+      <div class="report-tile">
+        <div class="report-tile-head">
+          <h3 class="report-tile-title">Client Address Report</h3>
+          <p class="report-tile-desc">Mailing list and address status for all clients.</p>
+        </div>
+        <div class="report-tile-filters">
+          <div class="form-group" style="margin:0">
+            <label>Filter</label>
+            <div class="filter-seg">
+              <label><input type="radio" name="rptAddrFilter" value="all" checked><span>All</span></label>
+              <label><input type="radio" name="rptAddrFilter" value="mailers"><span>Mailers</span></label>
+              <label><input type="radio" name="rptAddrFilter" value="mailers_good"><span>Mailers — Good Address</span></label>
+              <label><input type="radio" name="rptAddrFilter" value="bad_address"><span>Bad Address</span></label>
+            </div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Client Status</label>
+            <div class="filter-seg">
+              <label><input type="radio" name="rptAddrActive" value="1" checked><span>Active</span></label>
+              <label><input type="radio" name="rptAddrActive" value=""><span>All</span></label>
+              <label><input type="radio" name="rptAddrActive" value="0"><span>Inactive</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="report-tile-foot">
+          <button class="btn-primary" onclick="runAddressReport()">▶ Run Report</button>
+        </div>
+      </div>
+
     </div>
   </section>
 

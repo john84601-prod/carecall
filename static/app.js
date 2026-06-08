@@ -2139,6 +2139,82 @@ async function runReport(type) {
   }
 }
 
+async function runAddressReport() {
+  const filter = document.querySelector('input[name="rptAddrFilter"]:checked')?.value || 'all';
+  const active = document.querySelector('input[name="rptAddrActive"]:checked')?.value ?? '1';
+
+  const filterLabels = {
+    all:          'All Clients',
+    mailers:      'Mailers',
+    mailers_good: 'Mailers — Good Address',
+    bad_address:  'Bad Address',
+  };
+  const activeLabels = { '1': 'Active clients', '0': 'Inactive clients', '': 'All clients' };
+
+  const params = new URLSearchParams({ filter });
+  if (active !== '') params.set('active', active);
+
+  try {
+    const rows = await api('GET', `/reports/addresses?${params}`);
+    const subtitle = `${filterLabels[filter] || filter}  ·  ${activeLabels[active] ?? 'All clients'}`;
+    _printReportTitle = 'Client Address Report';
+    _printClientData  = null;
+    document.getElementById('printPageContent').innerHTML =
+      _buildAddressReportHtml(rows, subtitle);
+    document.getElementById('printPreviewOverlay').style.display = '';
+  } catch(e) {
+    toast('Report failed: ' + e.message, 'error');
+  }
+}
+
+function _buildAddressReportHtml(rows, subtitle) {
+  const printDate = new Date().toLocaleDateString('en-US',
+    { weekday:'short', year:'numeric', month:'long', day:'numeric' });
+
+  const rowsHtml = rows.map(r => {
+    const addrParts = [r.address1, r.address2].filter(Boolean);
+    const cityLine  = [r.city, r.state, r.zip_code].filter(Boolean).join(', ');
+    if (cityLine) addrParts.push(cityLine);
+    const addrHtml  = addrParts.length
+      ? addrParts.map(p => esc(p)).join('<br>')
+      : '<span style="color:#aaa">—</span>';
+    const mailerCell     = r.mailers     ? '✓' : '—';
+    const badAddrCell    = r.bad_address
+      ? '<span style="color:#c0392b;font-weight:600">✗</span>'
+      : '—';
+    return `<tr>
+      <td>${esc(r.full_name)}</td>
+      <td style="white-space:nowrap">${fmtPhone(r.phone || '')}</td>
+      <td style="font-size:.82rem;line-height:1.45">${addrHtml}</td>
+      <td style="text-align:center">${mailerCell}</td>
+      <td style="text-align:center">${badAddrCell}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="pp-header">
+      <div class="pp-logo">CareCall</div>
+      <div class="pp-print-date">Generated ${printDate}</div>
+    </div>
+    <div class="pp-name">Client Address Report</div>
+    <div class="pp-meta" style="margin-bottom:.15rem">${esc(subtitle)}</div>
+    <div class="pp-section-title">
+      ${rows.length} client${rows.length !== 1 ? 's' : ''}
+    </div>
+    ${rows.length ? `
+      <table class="pp-table">
+        <thead><tr>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Address</th>
+          <th style="text-align:center">Mailers</th>
+          <th style="text-align:center">Bad Addr</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>` : '<p style="color:#888;font-style:italic;padding:1rem 0">No clients match the selected filter.</p>'}
+  `;
+}
+
 function _rptFilterSummary({ clientName, clientPhone, callType, start, end }) {
   const parts = [];
   if (clientName) parts.push(`${clientName}  ${fmtPhone(clientPhone || '')}`);

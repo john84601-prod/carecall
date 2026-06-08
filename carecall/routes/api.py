@@ -1034,6 +1034,47 @@ def _get_twilio_client():
     return _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
 
 
+@api_bp.route('/reports/addresses', methods=['GET'])
+def report_addresses():
+    """Client address report.
+
+    Query params:
+      filter – 'all' | 'mailers' | 'mailers_good' | 'bad_address'  (default: all)
+      active  – '1' (default) | '0' | '' (both)
+    """
+    addr_filter = request.args.get('filter', 'all')
+    active_param = request.args.get('active', '1')
+
+    q = Client.query
+
+    if active_param == '1':
+        q = q.filter(Client.active == True)
+    elif active_param == '0':
+        q = q.filter(Client.active == False)
+
+    if addr_filter == 'mailers':
+        q = q.filter(Client.mailers == True)
+    elif addr_filter == 'mailers_good':
+        q = q.filter(Client.mailers == True, Client.bad_address == False)
+    elif addr_filter == 'bad_address':
+        q = q.filter(Client.bad_address == True)
+
+    clients = q.order_by(Client.last_name, Client.first_name).all()
+    return jsonify([{
+        'id':          c.id,
+        'full_name':   c.full_name,
+        'phone':       c.phone,
+        'address1':    c.address1  or '',
+        'address2':    c.address2  or '',
+        'city':        c.city      or '',
+        'state':       c.state     or '',
+        'zip_code':    c.zip_code  or '',
+        'mailers':     c.mailers,
+        'bad_address': c.bad_address,
+        'active':      c.active,
+    } for c in clients])
+
+
 @api_bp.route('/status', methods=['GET'])
 def get_system_status():
     """Live system health check — scheduler, public URL, Twilio config, uptime, server time."""
