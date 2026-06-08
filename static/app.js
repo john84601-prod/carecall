@@ -2029,7 +2029,7 @@ function _rptUpdateSelectedUI() {
 }
 
 function _initReportDates() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = _todayStr();   // local date, not UTC
   ['rpt1Start','rpt1End','rpt2Start','rpt2End'].forEach(id => {
     const el = document.getElementById(id);
     if (el && !el.value) el.value = today;
