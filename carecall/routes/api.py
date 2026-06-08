@@ -770,23 +770,23 @@ def report_calls():
     start_date = request.args.get('start_date', '')
     end_date   = request.args.get('end_date',   '')
 
-    # Convert local dates to UTC boundaries for DB comparison
-    local_now  = _dt.now()
-    utc_offset = _dt.utcnow() - local_now   # timedelta: how far ahead UTC is
+    # tz_offset is JS getTimezoneOffset() — minutes *west* of UTC (positive for US).
+    # Adding it to local midnight gives midnight in UTC.
+    tz_offset_min = request.args.get('tz_offset', type=int, default=0)
+    tz_delta = timedelta(minutes=tz_offset_min)
 
     q = CallLog.query
 
     if start_date:
         sd = _parse_date(start_date)
         if sd:
-            q = q.filter(CallLog.timestamp >= _dt.combine(sd, _dt.min.time()) + utc_offset)
+            q = q.filter(CallLog.timestamp >= _dt.combine(sd, _dt.min.time()) + tz_delta)
 
     if end_date:
         ed = _parse_date(end_date)
         if ed:
-            # end of local day = start of next day in UTC
             q = q.filter(CallLog.timestamp <
-                         _dt.combine(ed, _dt.min.time()) + utc_offset + timedelta(days=1))
+                         _dt.combine(ed, _dt.min.time()) + tz_delta + timedelta(days=1))
 
     if call_type == 'reminder':
         q = q.filter(CallLog.call_type == 'reminder')

@@ -2105,6 +2105,7 @@ function _rptUpdateDateArrows() {
 
 async function runReport(type) {
   const params = new URLSearchParams();
+  params.set('tz_offset', new Date().getTimezoneOffset()); // browser's local UTC offset
   let title, subtitle;
 
   if (type === 'individual') {
