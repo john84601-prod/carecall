@@ -842,6 +842,7 @@ hr { border: none; border-top: 1px solid var(--border); }
 }
 .type-chip-r { background: #dbeafe; color: #1d4ed8; }
 .type-chip-w { background: #dcfce7; color: #15803d; }
+.mailer-stamp { font-size: .95rem; vertical-align: middle; line-height: 1; cursor: default; }
 
 /* ── Clients table (row / list view) ─────────────────────────────────── */
 .clients-table { border-collapse: collapse; width: 100%; }

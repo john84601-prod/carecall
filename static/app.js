@@ -396,7 +396,7 @@ function _renderClientTiles(clients, container) {
         <div class="client-card-head">
           <div>
             <div class="client-name">
-              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}
+              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">&#128231;</span>' : ''}
               ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}
             </div>
             <div class="client-phone">${fmtPhone(c.phone)}</div>
@@ -421,7 +421,7 @@ function _renderClientRows(clients, container) {
         <thead><tr>
           <th>Name</th>
           <th>Phone</th>
-          <th>Calls</th>
+          <th>Service Type</th>
           <th>Status</th>
           <th>Emergency Contacts</th>
           <th></th>
@@ -433,7 +433,7 @@ function _renderClientRows(clients, container) {
               ${c.birthday ? `<br><small style="color:var(--muted)">${fmtBirthday(c.birthday)}</small>` : ''}
             </td>
             <td style="white-space:nowrap">${fmtPhone(c.phone)}</td>
-            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}</td>
+            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">&#128231;</span>' : ''}</td>
             <td>${c.active
               ? '<span class="badge badge-green">Active</span>'
               : '<span class="badge badge-gray">Inactive</span>'}</td>
