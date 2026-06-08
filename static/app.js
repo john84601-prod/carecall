@@ -364,6 +364,16 @@ function filterAndRenderClients() {
   renderClients(filtered);
 }
 
+const _STAMP_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" ' +
+  'fill="none" stroke="#2e86ab" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+  'style="vertical-align:middle;display:inline-block">' +
+  // Perforated outer border
+  '<rect x="2" y="2" width="20" height="20" rx="2" stroke-dasharray="3 2"/>' +
+  // Inner frame
+  '<rect x="6" y="6" width="12" height="12" rx="1"/>' +
+  '</svg>';
+
 function typeChips(types) {
   return (types || []).map(t =>
     t === 'reminder'
@@ -396,7 +406,7 @@ function _renderClientTiles(clients, container) {
         <div class="client-card-head">
           <div>
             <div class="client-name">
-              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">&#128231;</span>' : ''}
+              ${esc(c.full_name)}&nbsp;${typeChips(c.schedule_types)}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">' + _STAMP_ICON + '</span>' : ''}
               ${c.active ? '' : '<span class="badge badge-gray">inactive</span>'}
             </div>
             <div class="client-phone">${fmtPhone(c.phone)}</div>
@@ -433,7 +443,7 @@ function _renderClientRows(clients, container) {
               ${c.birthday ? `<br><small style="color:var(--muted)">${fmtBirthday(c.birthday)}</small>` : ''}
             </td>
             <td style="white-space:nowrap">${fmtPhone(c.phone)}</td>
-            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">&#128231;</span>' : ''}</td>
+            <td style="white-space:nowrap">${typeChips(c.schedule_types) || '<span style="color:var(--muted)">—</span>'}${c.mailers ? '&nbsp;<span class="mailer-stamp" title="Mailers">' + _STAMP_ICON + '</span>' : ''}</td>
             <td>${c.active
               ? '<span class="badge badge-green">Active</span>'
               : '<span class="badge badge-gray">Inactive</span>'}</td>
