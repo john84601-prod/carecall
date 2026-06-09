@@ -122,7 +122,7 @@ def _render(ip: str, url: str):
 def _to_rgb565(img) -> bytes:
     data = bytearray(WIDTH * HEIGHT * 2)
     idx = 0
-    for r, g, b in img.getdata():
+    for r, g, b in img.get_flattened_data() if hasattr(img, 'get_flattened_data') else img.getdata():
         pixel = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
         struct.pack_into('<H', data, idx, pixel)
         idx += 2
