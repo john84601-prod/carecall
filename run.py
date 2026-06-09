@@ -35,8 +35,12 @@ if __name__ == '__main__':
             print(f" Public URL for Twilio: {public_url}")
             print(f" Open your browser to: {public_url}\n")
         except Exception as e:
+            public_url = None
             print(f"\n CareCall running on {scheme}://0.0.0.0:{port}")
             print(f" WARNING: Could not determine public URL: {e}\n")
+
+    from carecall.lcd_display import start as start_lcd
+    start_lcd(public_url)
 
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False,
             ssl_context=ssl_context)
