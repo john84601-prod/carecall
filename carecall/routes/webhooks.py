@@ -79,7 +79,8 @@ def reminder_answer():
     # AnsweredBy values: human | machine_start | machine_end_beep |
     #                    machine_end_silence | machine_end_other | fax | unknown
     answered_by = request.form.get('AnsweredBy', 'unknown')
-    result = 'left_voicemail' if answered_by.startswith('machine') else 'reached_human'
+    is_machine  = answered_by.startswith('machine')
+    result = 'left_voicemail' if is_machine else 'reached_human'
 
     vr = VoiceResponse()
 
@@ -90,15 +91,61 @@ def reminder_answer():
             session.resolved_at = datetime.utcnow()
 
         schedule = log.schedule
-        if schedule and schedule.mp3_filename:
-            mp3_url = f"{_public_url()}/uploads/{schedule.mp3_filename}"
-            vr.play(mp3_url)
+
+        if is_machine:
+            # Voicemail — play message without a Gather (can't press keys).
+            if schedule and schedule.mp3_filename:
+                vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+            else:
+                vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
         else:
-            vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+            # Human answered — wrap in Gather so any key press is captured as
+            # a positive acknowledgment (failsafe for noisy lines / TTS issues).
+            gather = Gather(
+                num_digits=1,
+                action=f"{_public_url()}/webhook/reminder-keypress"
+                       f"?log_id={log_id}&session_id={session_id}",
+                method='POST',
+                timeout=45,
+            )
+            if schedule and schedule.mp3_filename:
+                gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+            else:
+                gather.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+            vr.append(gather)
+
         db.session.commit()
     else:
         vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
 
+    return _xml(vr)
+
+
+@webhooks_bp.route('/reminder-keypress', methods=['POST'])
+def reminder_keypress():
+    from carecall.models import ReminderSession
+    log_id     = request.args.get('log_id',     type=int)
+    session_id = request.args.get('session_id', type=int)
+    digits     = request.form.get('Digits', '')
+
+    log     = db.session.get(CallLog,         log_id)     if log_id     else None
+    session = db.session.get(ReminderSession, session_id) if session_id else None
+
+    vr = VoiceResponse()
+
+    if log:
+        log.keypress_received = digits
+        if digits == _required_keypress():
+            log.status = 'acknowledged'
+            if session:
+                session.status = 'acknowledged'
+                session.resolved_at = datetime.utcnow()
+        db.session.commit()
+
+    if digits == _required_keypress():
+        vr.say("Thank you. Your reminder has been acknowledged. Have a great day.", voice=_voice())
+    else:
+        vr.say("Thank you. Goodbye.", voice=_voice())
     return _xml(vr)
 
 
@@ -359,6 +406,38 @@ def emergency_keypress():
         vr.say("Session not found. Goodbye.", voice=_voice())
 
     return _xml(vr)
+
+
+# ── Recording status callback ─────────────────────────────────────────────────
+
+@webhooks_bp.route('/call-recording', methods=['POST'])
+def call_recording():
+    """Twilio posts here when a call recording is ready.
+
+    Matches the log via log_id query param (set when the call was placed) and
+    stores the RecordingSid + duration on the CallLog for later playback.
+    """
+    log_id            = request.args.get('log_id', type=int)
+    recording_sid     = request.form.get('RecordingSid', '')
+    recording_status  = request.form.get('RecordingStatus', '')
+    recording_duration = request.form.get('RecordingDuration', '')
+
+    if recording_status != 'completed' or not recording_sid:
+        return '', 204
+
+    log = db.session.get(CallLog, log_id) if log_id else None
+    if log:
+        log.recording_sid = recording_sid
+        try:
+            log.recording_duration = int(recording_duration)
+        except (ValueError, TypeError):
+            pass
+        db.session.commit()
+        logger.info(f"Recording {recording_sid} stored for log {log_id}")
+    else:
+        logger.warning(f"call-recording: no CallLog found for log_id={log_id}")
+
+    return '', 204
 
 
 # ── Twilio call status callback ────────────────────────────────────────────────

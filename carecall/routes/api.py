@@ -69,8 +69,9 @@ def update_client(client_id):
         client.birthday = _parse_date(data['birthday'])
     client.notes       = data.get('notes',       client.notes)
     client.active      = data.get('active',      client.active)
-    if 'mailers'     in data: client.mailers     = bool(data['mailers'])
-    if 'bad_address' in data: client.bad_address = bool(data['bad_address'])
+    if 'mailers'      in data: client.mailers      = bool(data['mailers'])
+    if 'bad_address'  in data: client.bad_address  = bool(data['bad_address'])
+    if 'record_calls' in data: client.record_calls = bool(data['record_calls'])
     db.session.commit()
     return jsonify(client.to_dict())
 
@@ -1032,6 +1033,86 @@ def proxy_inbound_audio(msg_id):
 def _get_twilio_client():
     from twilio.rest import Client as _TwilioClient
     return _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
+
+
+# ── Call recording settings ────────────────────────────────────────────────────
+
+@api_bp.route('/recording-settings', methods=['GET'])
+def get_recording_settings():
+    cfg = _load_system_config()
+    return jsonify({
+        'record_all_calls':         cfg.get('record_all_calls', False),
+        'recording_retention_days': cfg.get('recording_retention_days', 7),
+    })
+
+
+@api_bp.route('/recording-settings', methods=['POST'])
+def save_recording_settings():
+    data = request.get_json() or {}
+    cfg = _load_system_config()
+    if 'record_all_calls' in data:
+        cfg['record_all_calls'] = bool(data['record_all_calls'])
+    if 'recording_retention_days' in data:
+        days = max(1, int(data['recording_retention_days']))
+        cfg['recording_retention_days'] = days
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+# ── Call recordings review ─────────────────────────────────────────────────────
+
+@api_bp.route('/call-recordings', methods=['GET'])
+def get_call_recordings():
+    """List the 200 most recent CallLog entries that have a recording."""
+    logs = (CallLog.query
+            .filter(CallLog.recording_sid.isnot(None))
+            .order_by(CallLog.timestamp.desc())
+            .limit(200)
+            .all())
+    return jsonify([l.to_dict() for l in logs])
+
+
+@api_bp.route('/call-recordings/<int:log_id>/audio', methods=['GET'])
+def proxy_call_recording_audio(log_id):
+    """Proxy Twilio recording audio so credentials stay server-side."""
+    import requests as _req
+    from io import BytesIO
+    from flask import send_file
+    log = db.session.get(CallLog, log_id)
+    if not log or not log.recording_sid:
+        return jsonify({'error': 'Not found'}), 404
+    account_sid = os.getenv('TWILIO_ACCOUNT_SID', '')
+    auth_token  = os.getenv('TWILIO_AUTH_TOKEN', '')
+    url = (f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}"
+           f"/Recordings/{log.recording_sid}.mp3")
+    try:
+        r = _req.get(url, auth=(account_sid, auth_token), timeout=30)
+        if r.status_code != 200:
+            current_app.logger.error(
+                f"Twilio returned {r.status_code} for recording {log.recording_sid}")
+            return jsonify({'error': 'Recording not available'}), 502
+        return send_file(BytesIO(r.content), mimetype='audio/mpeg',
+                         download_name='recording.mp3')
+    except Exception as e:
+        current_app.logger.error(f"Audio proxy error for {log.recording_sid}: {e}")
+        return jsonify({'error': 'Could not fetch recording'}), 502
+
+
+@api_bp.route('/call-recordings/<int:log_id>', methods=['DELETE'])
+def delete_call_recording(log_id):
+    """Delete a call recording from Twilio and clear the SID from the log."""
+    log = db.session.get(CallLog, log_id)
+    if not log or not log.recording_sid:
+        return jsonify({'error': 'Not found'}), 404
+    try:
+        _get_twilio_client().recordings(log.recording_sid).delete()
+    except Exception as e:
+        current_app.logger.warning(
+            f"Could not delete Twilio recording {log.recording_sid}: {e}")
+    log.recording_sid      = None
+    log.recording_duration = None
+    db.session.commit()
+    return '', 204
 
 
 @api_bp.route('/reports/addresses', methods=['GET'])

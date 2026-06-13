@@ -61,7 +61,8 @@ def register_sms_webhook(sms_url):
 
 
 def make_call(to_number, answer_url, status_callback_url,
-              machine_detection=False, amd_status_callback_url=None):
+              machine_detection=False, amd_status_callback_url=None,
+              record=False, recording_status_callback=None):
     """Initiate an outbound call. Returns the Twilio call SID.
 
     machine_detection=True enables Twilio AMD.
@@ -85,6 +86,12 @@ def make_call(to_number, answer_url, status_callback_url,
         status_callback_event=['completed', 'no-answer', 'busy', 'failed'],
         status_callback_method='POST',
     )
+    if record:
+        params['record'] = True
+        if recording_status_callback:
+            params['recording_status_callback']        = recording_status_callback
+            params['recording_status_callback_method'] = 'POST'
+
     if machine_detection:
         params['machine_detection'] = 'DetectMessageEnd'
         if amd_status_callback_url:

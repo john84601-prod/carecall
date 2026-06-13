@@ -31,6 +31,7 @@ def init_scheduler(app):
     _startup_missed_call_check()
     _register_sms_webhook()
     _init_backup_job()
+    _register_recording_cleanup_job()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -243,6 +244,71 @@ def _classify_call_error(exc, base_url_obtained):
     return 'failed'
 
 
+# ── Recording helpers ─────────────────────────────────────────────────────────
+
+def _should_record(client):
+    """Return True if this client's calls should be recorded."""
+    from carecall.routes.api import _load_system_config
+    try:
+        cfg = _load_system_config()
+    except Exception:
+        cfg = {}
+    return cfg.get('record_all_calls', False) or bool(getattr(client, 'record_calls', False))
+
+
+def _register_recording_cleanup_job():
+    _scheduler.add_job(
+        func=_purge_old_recordings,
+        trigger='cron',
+        hour=3,
+        minute=0,
+        id='recording_cleanup',
+        replace_existing=True,
+    )
+    logger.info("Recording cleanup job registered (daily at 03:00)")
+
+
+def _purge_old_recordings():
+    """Delete Twilio recordings older than recording_retention_days and clear their SIDs."""
+    with _app.app_context():
+        import os as _os
+        from carecall.models import CallLog, db
+        from carecall.routes.api import _load_system_config
+
+        cfg  = _load_system_config()
+        days = int(cfg.get('recording_retention_days', 7))
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        logs = CallLog.query.filter(
+            CallLog.recording_sid.isnot(None),
+            CallLog.timestamp < cutoff,
+        ).all()
+
+        if not logs:
+            logger.info(f"Recording cleanup: no recordings older than {days} days")
+            return
+
+        try:
+            from twilio.rest import Client as _TwilioClient
+            tw = _TwilioClient(_os.getenv('TWILIO_ACCOUNT_SID'), _os.getenv('TWILIO_AUTH_TOKEN'))
+        except Exception as e:
+            logger.error(f"Recording cleanup: could not init Twilio client: {e}")
+            return
+
+        deleted = 0
+        for log in logs:
+            try:
+                tw.recordings(log.recording_sid).delete()
+            except Exception:
+                pass  # already gone or inaccessible — still clear the SID
+            log.recording_sid      = None
+            log.recording_duration = None
+            deleted += 1
+
+        db.session.commit()
+        logger.info(f"Recording cleanup: purged {deleted} recording(s) older than {days} days")
+
+
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 def _fire_reminder(schedule_id):
@@ -301,6 +367,7 @@ def _attempt_reminder_call(session_id):
         base = None
         try:
             base = get_public_url()
+            _record = _should_record(session.client)
             sid = make_call(
                 session.client.phone,
                 answer_url=(
@@ -312,6 +379,10 @@ def _attempt_reminder_call(session_id):
                     f"?call_type=reminder&session_id={session_id}&log_id={log.id}"
                 ),
                 machine_detection=True,
+                record=_record,
+                recording_status_callback=(
+                    f"{base}/webhook/call-recording?log_id={log.id}" if _record else None
+                ),
             )
             log.call_sid = sid
             logger.info(
@@ -456,12 +527,17 @@ def _attempt_wellness_call(session_id):
         base = None
         try:
             base = get_public_url()
+            _record = _should_record(session.client)
             sid = make_call(
                 session.client.phone,
                 answer_url=f"{base}/webhook/wellness-answer?session_id={session_id}&log_id={log.id}",
                 status_callback_url=f"{base}/webhook/call-status?session_id={session_id}&log_id={log.id}&call_type=wellness",
                 machine_detection=True,
                 amd_status_callback_url=f"{base}/webhook/wellness-amd-result?session_id={session_id}&log_id={log.id}",
+                record=_record,
+                recording_status_callback=(
+                    f"{base}/webhook/call-recording?log_id={log.id}" if _record else None
+                ),
             )
             log.call_sid = sid
         except Exception as e:
@@ -562,6 +638,7 @@ def _call_next_emergency_contact(session_id):
         db.session.flush()
 
         base = get_public_url()
+        _record = _should_record(session.client)
         try:
             sid = make_call(
                 next_contact.phone,
@@ -574,6 +651,10 @@ def _call_next_emergency_contact(session_id):
                     f"?session_id={session_id}&log_id={log.id}&call_type=emergency&contact_id={next_contact.id}"
                 ),
                 machine_detection=True,
+                record=_record,
+                recording_status_callback=(
+                    f"{base}/webhook/call-recording?log_id={log.id}" if _record else None
+                ),
             )
             log.call_sid = sid
             logger.info(f"Session {session_id}: calling emergency contact {next_contact.name} ({next_contact.phone})")

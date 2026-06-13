@@ -29,6 +29,7 @@
   <button class="nav-btn" data-tab="reports">Reports</button>
   <button class="nav-btn" data-tab="audio">Audio Files</button>
   <button class="nav-btn" data-tab="messages">Messages <span class="nav-badge" id="msgBadge" style="display:none"></span></button>
+  <button class="nav-btn" data-tab="recordings">Recordings</button>
   <button class="nav-btn" data-tab="settings">Settings</button>
 </nav>
 
@@ -547,6 +548,24 @@
       </div>
       <div id="pauseCallsNote" style="margin-top:.6rem;font-size:.82rem;color:var(--muted)"></div>
 
+      <!-- ── Call Recording ───────────────────────────────────────── -->
+      <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Call Recording</h2>
+      <p>Record calls for troubleshooting. Recordings are stored by Twilio and automatically deleted after the retention period. You can also enable recording per-client in their profile.</p>
+      <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:.75rem">
+        <label style="display:flex;align-items:center;gap:.6rem;font-size:.9rem;cursor:pointer">
+          <input type="checkbox" id="recAllCallsChk" onchange="saveRecordingSettings()">
+          Record all calls globally (overrides per-client setting)
+        </label>
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <label style="font-size:.875rem;white-space:nowrap">Keep recordings for</label>
+          <input type="number" id="recRetentionDays" min="1" max="365" value="7"
+            style="width:70px;padding:.4rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.875rem"
+            onchange="saveRecordingSettings()">
+          <span style="font-size:.875rem">days</span>
+          <span id="recSettingsStatus" style="font-size:.82rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
       <!-- ── Backup ─────────────────────────────────────────────────── -->
       <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Backup</h2>
 
@@ -734,6 +753,27 @@
     </div>
   </section>
 
+  <!-- ── Recordings ──────────────────────────────────────────────────── -->
+  <section id="tab-recordings" class="tab">
+    <div class="settings-panel">
+      <h2>Call Recordings</h2>
+      <p>Recordings are stored by Twilio and streamed here for playback. Enable recording per-client in their profile, or use the global setting in <strong>Settings</strong>.</p>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+        <button class="btn-ghost btn-sm" onclick="loadRecordings()">🔄 Refresh</button>
+        <select id="recFilterType" onchange="renderRecordings()"
+          style="padding:.4rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:#fff">
+          <option value="">All call types</option>
+          <option value="reminder">Reminder</option>
+          <option value="wellness">Wellness</option>
+          <option value="emergency">Emergency</option>
+        </select>
+      </div>
+      <div id="recList">
+        <span style="color:var(--muted);font-size:.85rem">Loading…</span>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <!-- ── Client Modal ───────────────────────────────────────────────────── -->
@@ -768,11 +808,16 @@
         </div>
       </div>
 
-      <!-- Row 2: Active toggle + Save/Cancel -->
+      <!-- Row 2: Active + Record toggle + Save/Cancel -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.875rem">
-          <input type="checkbox" id="clientActive" checked> Active
-        </label>
+        <div style="display:flex;align-items:center;gap:1.25rem">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.875rem">
+            <input type="checkbox" id="clientActive" checked> Active
+          </label>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.875rem" title="Record this client's calls for troubleshooting">
+            <input type="checkbox" id="clientRecordCalls"> Record calls
+          </label>
+        </div>
         <div style="display:flex;gap:.5rem">
           <button type="button" class="btn-ghost" onclick="closeOverlay('clientOverlay')">Cancel</button>
           <button type="submit" class="btn-primary">Save Client</button>

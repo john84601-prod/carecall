@@ -143,8 +143,9 @@ function setupTabs() {
         case 'schedules': loadSchedules(); break;
         case 'reports':   /* tiles are static; dates already initialised */ break;
         case 'audio':     loadAudio();     break;
-        case 'messages':  loadMessages();  break;
-        case 'settings':  loadSettings();  break;
+        case 'messages':    loadMessages();    break;
+        case 'recordings':  loadRecordings();  break;
+        case 'settings':    loadSettings();    break;
       }
     });
   });
@@ -491,6 +492,7 @@ function showClientModal(client) {
   document.getElementById('clientZip').value = '';
   document.getElementById('clientMailers').checked = true;
   document.getElementById('clientBadAddress').checked = false;
+  document.getElementById('clientRecordCalls').checked = false;
   document.getElementById('clientNotes').value = '';
   document.getElementById('clientActive').checked = true;
   document.getElementById('clientTabsSection').style.display = 'none';
@@ -520,6 +522,7 @@ async function editClient(id) {
   document.getElementById('clientZip').value = c.zip_code || '';
   document.getElementById('clientMailers').checked    = c.mailers !== false;
   document.getElementById('clientBadAddress').checked = !!c.bad_address;
+  document.getElementById('clientRecordCalls').checked = !!c.record_calls;
   document.getElementById('clientNotes').value = c.notes || '';
   document.getElementById('clientActive').checked = c.active;
   document.getElementById('clientTabsSection').style.display = '';
@@ -546,9 +549,10 @@ async function saveClient(e) {
     state:      document.getElementById('clientState').value.trim().toUpperCase(),
     zip_code:   document.getElementById('clientZip').value.trim(),
     notes:       document.getElementById('clientNotes').value.trim(),
-    active:      document.getElementById('clientActive').checked,
-    mailers:     document.getElementById('clientMailers').checked,
-    bad_address: document.getElementById('clientBadAddress').checked,
+    active:       document.getElementById('clientActive').checked,
+    mailers:      document.getElementById('clientMailers').checked,
+    bad_address:  document.getElementById('clientBadAddress').checked,
+    record_calls: document.getElementById('clientRecordCalls').checked,
   };
   try {
     if (id) {
@@ -1537,6 +1541,8 @@ async function loadSettings() {
   await loadCallsPaused();
   // Load voice setting
   await loadVoiceSetting();
+  // Load recording settings
+  await loadRecordingSettings();
 }
 
 // ── TTS voice setting ─────────────────────────────────────────────────────────
@@ -3098,4 +3104,103 @@ function _fmtBytes(n) {
   if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
   if (n > 1024)    return (n / 1024).toFixed(1) + ' KB';
   return n + ' B';
+}
+
+// ── Recording settings ────────────────────────────────────────────────────────
+
+async function loadRecordingSettings() {
+  try {
+    const r = await api('GET', '/recording-settings');
+    const chk = document.getElementById('recAllCallsChk');
+    const days = document.getElementById('recRetentionDays');
+    if (chk)  chk.checked = !!r.record_all_calls;
+    if (days) days.value  = r.recording_retention_days ?? 7;
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveRecordingSettings() {
+  const chk  = document.getElementById('recAllCallsChk');
+  const days = document.getElementById('recRetentionDays');
+  const statusEl = document.getElementById('recSettingsStatus');
+  try {
+    await api('POST', '/recording-settings', {
+      record_all_calls:         chk  ? chk.checked       : false,
+      recording_retention_days: days ? parseInt(days.value) || 7 : 7,
+    });
+    if (statusEl) { statusEl.textContent = 'Saved'; setTimeout(() => statusEl.textContent = '', 2000); }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = 'Error saving';
+  }
+}
+
+// ── Recordings tab ────────────────────────────────────────────────────────────
+
+let _allRecordings = [];
+
+async function loadRecordings() {
+  const el = document.getElementById('recList');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">Loading…</span>';
+  try {
+    _allRecordings = await api('GET', '/call-recordings');
+    renderRecordings();
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--red);font-size:.85rem">${esc(e.message)}</span>`;
+  }
+}
+
+function renderRecordings() {
+  const el = document.getElementById('recList');
+  if (!el) return;
+  const typeFilter = document.getElementById('recFilterType')?.value || '';
+  const recs = typeFilter
+    ? _allRecordings.filter(r => r.call_type === typeFilter)
+    : _allRecordings;
+
+  if (!recs.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">No recordings found.</span>';
+    return;
+  }
+
+  const typeLabel = { reminder: 'Reminder', wellness: 'Wellness', emergency: 'Emergency' };
+  const typeBadgeColor = {
+    reminder:  'var(--muted)',
+    wellness:  'var(--blue, #2563eb)',
+    emergency: 'var(--red)',
+  };
+
+  el.innerHTML = recs.map(r => {
+    const when = new Date(r.timestamp).toLocaleString();
+    const dur  = r.recording_duration ? `${r.recording_duration}s` : '';
+    const type = typeLabel[r.call_type] || r.call_type;
+    const badgeColor = typeBadgeColor[r.call_type] || 'var(--muted)';
+    return `
+    <div class="msg-card" id="recCard${r.id}">
+      <div class="msg-card-top">
+        <div class="msg-who">
+          <span style="font-size:.75rem;font-weight:600;color:${badgeColor};text-transform:uppercase;margin-right:.5rem">${esc(type)}</span>
+          <strong>${esc(r.client_name)}</strong>
+          <span style="color:var(--muted);font-size:.85rem;margin-left:.35rem">${esc(r.client_phone)}</span>
+        </div>
+        <div class="msg-meta">${when}${dur ? ' &middot; ' + dur : ''} &middot; attempt ${r.attempt_number}</div>
+      </div>
+      <audio controls preload="none" style="width:100%;margin:.5rem 0"
+             src="/api/call-recordings/${r.id}/audio"></audio>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.25rem;flex-wrap:wrap">
+        <span style="font-size:.82rem;color:var(--muted)">Status: ${esc(r.status)}</span>
+        <button class="btn-ghost btn-sm" style="color:var(--red);margin-left:auto"
+                onclick="deleteRecording(${r.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteRecording(id) {
+  if (!confirm('Delete this recording? It will be removed from Twilio.')) return;
+  try {
+    await api('DELETE', `/call-recordings/${id}`);
+    _allRecordings = _allRecordings.filter(r => r.id !== id);
+    renderRecordings();
+    toast('Recording deleted.');
+  } catch(e) { toast(e.message, 'error'); }
 }

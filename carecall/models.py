@@ -18,6 +18,7 @@ class Client(db.Model):
     active = db.Column(db.Boolean, default=True)
     mailers     = db.Column(db.Boolean, default=True)
     bad_address = db.Column(db.Boolean, default=False)
+    record_calls = db.Column(db.Boolean, default=False)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -52,6 +53,7 @@ class Client(db.Model):
             'active':      self.active,
             'mailers':     self.mailers,
             'bad_address': self.bad_address,
+            'record_calls': self.record_calls,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() + 'Z',
             'emergency_contacts': [c.to_dict() for c in self.emergency_contacts],
@@ -219,7 +221,7 @@ class ReminderSession(db.Model):
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'), nullable=False)
     client_id   = db.Column(db.Integer, db.ForeignKey('clients.id'),   nullable=False)
 
-    # pending → calling → reached_human | left_voicemail | failed
+    # pending → calling → reached_human | left_voicemail | acknowledged | failed
     status          = db.Column(db.String(30), default='pending')
     current_attempt = db.Column(db.Integer, default=0)
 
@@ -336,6 +338,8 @@ class CallLog(db.Model):
     attempt_number = db.Column(db.Integer, default=1)
     status = db.Column(db.String(30), default='initiated')
     keypress_received = db.Column(db.String(1))
+    recording_sid      = db.Column(db.String(50))
+    recording_duration = db.Column(db.Integer)
 
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text, default='')
@@ -373,7 +377,9 @@ class CallLog(db.Model):
             'call_type': self.call_type,
             'attempt_number': self.attempt_number,
             'status': self.status,
-            'keypress_received': self.keypress_received,
+            'keypress_received':  self.keypress_received,
+            'recording_sid':      self.recording_sid,
+            'recording_duration': self.recording_duration,
             'timestamp': self.timestamp.isoformat() + 'Z',
             'next_attempt_at': _next_attempt_at,
             'notes': self.notes,
