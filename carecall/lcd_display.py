@@ -25,6 +25,7 @@ URL_COLOR     = (100, 255, 100)
 DIM_COLOR     = (100, 100, 100)
 
 _public_url: str = 'Starting...'
+_from_number: str = ''
 _lock = threading.Lock()
 
 
@@ -34,9 +35,20 @@ def set_public_url(url: str):
         _public_url = url
 
 
+def set_from_number(number: str):
+    global _from_number
+    with _lock:
+        _from_number = number
+
+
 def _get_public_url() -> str:
     with _lock:
         return _public_url
+
+
+def _get_from_number() -> str:
+    with _lock:
+        return _from_number
 
 
 def _get_local_ip() -> str:
@@ -82,7 +94,7 @@ def _wrap_url(url: str, draw, font, max_width: int) -> list[str]:
     return [url[:mid], url[mid:]]
 
 
-def _render(ip: str, url: str):
+def _render(ip: str, url: str, from_number: str):
     from PIL import Image, ImageDraw
     img = Image.new('RGB', (WIDTH, HEIGHT), color=BG_COLOR)
     d = ImageDraw.Draw(img)
@@ -101,15 +113,23 @@ def _render(ip: str, url: str):
     # ── Local IP ──────────────────────────────────────────────────────────
     d.text((20, 70),  'Local IP',  font=font_label, fill=LABEL_COLOR)
     d.text((20, 96),  ip,          font=font_value, fill=VALUE_COLOR)
-    d.line([(16, 142), (WIDTH - 16, 142)], fill=DIM_COLOR, width=1)
+    d.line([(16, 136), (WIDTH - 16, 136)], fill=DIM_COLOR, width=1)
 
     # ── Public URL ────────────────────────────────────────────────────────
-    d.text((20, 152), 'Public URL', font=font_label, fill=LABEL_COLOR)
+    d.text((20, 144), 'Public URL', font=font_label, fill=LABEL_COLOR)
     lines = _wrap_url(url, d, font_url, WIDTH - 40)
-    y = 178
+    y = 168
     for line in lines:
         d.text((20, y), line, font=font_url, fill=URL_COLOR)
-        y += 28
+        y += 26
+    d.line([(16, y + 4), (WIDTH - 16, y + 4)], fill=DIM_COLOR, width=1)
+
+    # ── Call From ─────────────────────────────────────────────────────────
+    y += 12
+    d.text((20, y), 'Call From', font=font_label, fill=LABEL_COLOR)
+    y += 24
+    display_num = from_number if from_number else 'Not configured'
+    d.text((20, y), display_num, font=font_value, fill=VALUE_COLOR)
 
     # ── Timestamp ─────────────────────────────────────────────────────────
     ts = time.strftime('%Y-%m-%d  %H:%M:%S')
@@ -135,9 +155,10 @@ def _write_fb(data: bytes):
 
 
 def _update_once():
-    ip  = _get_local_ip()
-    url = _get_public_url()
-    img = _render(ip, url)
+    ip   = _get_local_ip()
+    url  = _get_public_url()
+    num  = _get_from_number()
+    img  = _render(ip, url, num)
     _write_fb(_to_rgb565(img))
 
 
@@ -150,13 +171,15 @@ def _loop():
         time.sleep(UPDATE_INTERVAL)
 
 
-def start(public_url: str | None = None):
+def start(public_url: str | None = None, from_number: str | None = None):
     """Start the background LCD refresh thread."""
     if not os.path.exists(FB_DEVICE):
         logger.warning('LCD: %s not found — display thread not started', FB_DEVICE)
         return
     if public_url:
         set_public_url(public_url)
+    if from_number:
+        set_from_number(from_number)
     t = threading.Thread(target=_loop, name='lcd-display', daemon=True)
     t.start()
     logger.info('LCD display thread started')

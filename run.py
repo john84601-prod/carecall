@@ -40,7 +40,12 @@ if __name__ == '__main__':
             print(f" WARNING: Could not determine public URL: {e}\n")
 
     from carecall.lcd_display import start as start_lcd
-    start_lcd(public_url)
+    from carecall.twilio_client import get_from_number as _get_from_number
+    try:
+        from_number = _get_from_number()
+    except Exception:
+        from_number = None
+    start_lcd(public_url, from_number)
 
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False,
             ssl_context=ssl_context)
