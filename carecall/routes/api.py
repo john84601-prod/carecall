@@ -1098,6 +1098,34 @@ def proxy_call_recording_audio(log_id):
         return jsonify({'error': 'Could not fetch recording'}), 502
 
 
+@api_bp.route('/restart', methods=['POST'])
+def restart_service():
+    """Restart CareCall. Uses systemctl if running as a service, otherwise re-execs."""
+    import subprocess, sys, threading
+
+    def _do_restart():
+        import time
+        time.sleep(0.5)  # let the HTTP response go out first
+        # Systemd path
+        if os.environ.get('INVOCATION_ID'):
+            subprocess.Popen(['sudo', 'systemctl', 'restart', 'carecall'])
+            return
+        # Direct python run.py path — kill port conflicts then re-exec
+        try:
+            subprocess.run(['fuser', '-k', '5000/tcp'], capture_output=True)
+        except Exception:
+            pass
+        try:
+            subprocess.run(['pkill', '-f', 'ngrok'], capture_output=True)
+        except Exception:
+            pass
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Restarting…'})
+
+
 @api_bp.route('/call-recordings/<int:log_id>', methods=['DELETE'])
 def delete_call_recording(log_id):
     """Delete a call recording from Twilio and clear the SID from the log."""

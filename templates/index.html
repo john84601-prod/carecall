@@ -484,6 +484,12 @@
         Restart CareCall after making changes.
       </div>
       <div id="settingsInfo"></div>
+
+      <div style="margin-top:.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <button class="btn-primary" id="restartBtn" onclick="restartService()">↺ Restart Service</button>
+        <span id="restartStatus" style="font-size:.85rem;color:var(--muted)"></span>
+      </div>
+
       <div class="info-box" style="margin-top:.75rem">
         <strong>Inbound call webhook URL</strong> — configure this in the Twilio Console under your phone number's "A call comes in" setting:<br>
         <code id="inboundWebhookUrl" style="font-size:.8rem;word-break:break-all">Loading…</code>

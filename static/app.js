@@ -1946,6 +1946,37 @@ async function sendTestCall() {
   }
 }
 
+async function restartService() {
+  const btn = document.getElementById('restartBtn');
+  const status = document.getElementById('restartStatus');
+  if (!confirm('Restart CareCall? The app will be briefly unavailable.')) return;
+  btn.disabled = true;
+  status.textContent = 'Restarting…';
+  try {
+    await api('POST', '/restart');
+  } catch (_) {
+    // Expected — the server goes down before responding
+  }
+  // Poll until the server comes back
+  status.textContent = 'Waiting for service to come back online…';
+  const start = Date.now();
+  const poll = setInterval(async () => {
+    if (Date.now() - start > 30000) {
+      clearInterval(poll);
+      btn.disabled = false;
+      status.textContent = 'Timed out — check the server.';
+      return;
+    }
+    try {
+      await fetch('/api/status');
+      clearInterval(poll);
+      btn.disabled = false;
+      status.textContent = 'Service restarted successfully.';
+      setTimeout(() => { status.textContent = ''; }, 4000);
+    } catch (_) { /* still down */ }
+  }, 1500);
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 let _rpt1Selected = null;  // { id, full_name, phone } — client chosen from autocomplete
