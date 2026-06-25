@@ -354,24 +354,15 @@ def validate_webhook_signature(request):
     from twilio.request_validator import RequestValidator
 
     if provider == 'signalwire':
-        token = os.getenv('SIGNALWIRE_AUTH_TOKEN', '').strip()
-        if not token:
-            logger.warning('SIGNALWIRE_AUTH_TOKEN not set — skipping webhook signature validation')
+        # Webhook signatures are signed with the Space's Signing Key
+        # (PSK_...), NOT the PT... API token used for REST auth — those are
+        # two separate credentials in the SignalWire dashboard.
+        signing_key = os.getenv('SIGNALWIRE_SIGNING_KEY', '').strip()
+        if not signing_key:
+            logger.warning('SIGNALWIRE_SIGNING_KEY not set — skipping webhook signature validation')
             return True
-        # SignalWire signs with the exact Twilio algorithm and even sends an
-        # X-Twilio-Signature alias header, so reuse Twilio's own validator.
         signature = request.headers.get('X-SignalWire-Signature', '')
-        validator = RequestValidator(token)
-        valid = validator.validate(request.url, params, signature)
-        if not valid:
-            logger.warning(
-                f"SignalWire sig debug — token_len={len(token)} token_prefix={token[:4]!r} "
-                f"url={request.url!r} base_url={request.base_url!r} "
-                f"computed_on_url={validator.compute_signature(request.url, params)!r} "
-                f"computed_on_base_url={validator.compute_signature(request.base_url, params)!r} "
-                f"received={signature!r}"
-            )
-        return valid
+        return RequestValidator(signing_key).validate(request.url, params, signature)
 
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
     if not token:
