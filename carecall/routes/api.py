@@ -1201,12 +1201,15 @@ def get_system_status():
         public_url = None
         url_ok = False
 
-    # ── Twilio credentials ─────────────────────────────────────────────────
-    twilio_ok = bool(
-        os.getenv('TWILIO_ACCOUNT_SID', '').startswith('AC') and
-        os.getenv('TWILIO_AUTH_TOKEN', '') and
-        os.getenv('TWILIO_FROM_NUMBER', '')
-    )
+    # ── Voice provider credentials ─────────────────────────────────────────
+    from carecall.voice_client import get_provider_name, get_from_number
+    voice_provider = get_provider_name()
+    try:
+        from_number = get_from_number()
+        provider_ok = True
+    except RuntimeError:
+        from_number = None
+        provider_ok = False
 
     # ── Uptime ─────────────────────────────────────────────────────────────
     start = current_app.config.get('START_TIME')
@@ -1228,7 +1231,9 @@ def get_system_status():
         'scheduler_running': scheduler_ok,
         'public_url':        public_url,
         'public_url_ok':     url_ok,
-        'twilio_configured': twilio_ok,
+        'voice_provider':    voice_provider,
+        'from_number':       from_number,
+        'twilio_configured': provider_ok,
         'calls_paused':      calls_paused,
         'uptime':            uptime,
         'server_time':       server_time,

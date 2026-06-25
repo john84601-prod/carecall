@@ -63,9 +63,13 @@ function _renderSystemStatus(s) {
     : 'No Public URL';
   _setItem('sysDotUrl', 'sysLabelUrl', s.public_url_ok, urlLabel);
 
-  _setItem('sysDotTwilio', 'sysLabelTwilio',
-    s.twilio_configured,
-    s.twilio_configured ? 'Twilio' : 'Twilio ✗ Not Configured');
+  const providerName = s.voice_provider
+    ? s.voice_provider.charAt(0).toUpperCase() + s.voice_provider.slice(1)
+    : 'Voice Provider';
+  const providerLabel = s.twilio_configured
+    ? `${providerName}${s.from_number ? ' ' + fmtPhone(s.from_number) : ''}`
+    : `${providerName} ✗ Not Configured`;
+  _setItem('sysDotTwilio', 'sysLabelTwilio', s.twilio_configured, providerLabel);
 
   const pausedItem = document.getElementById('sysPausedItem');
   if (pausedItem) pausedItem.style.display = s.calls_paused ? '' : 'none';
