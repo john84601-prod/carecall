@@ -832,6 +832,8 @@ _ALLOWED_VOICES = [
     'Polly.Amy-Neural', 'Polly.Arthur-Neural', 'Polly.Brian-Neural', 'Polly.Emma-Neural',
     # Australian English
     'Polly.Olivia-Neural',
+    # SignalWire classic voices
+    'woman', 'man', 'alice',
 ]
 
 _DEFAULT_VOICE = 'Polly.Joanna-Neural'

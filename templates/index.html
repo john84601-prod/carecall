@@ -499,7 +499,7 @@
           <p>Voice used for all automated calls — reminders, wellness checks, and emergency notifications.</p>
           <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
             <select id="voiceSelect" style="padding:.45rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.875rem;background:#fff;min-width:220px">
-              <optgroup label="American English">
+              <optgroup label="American English" class="voice-group-twilio">
                 <option value="Polly.Danielle-Neural">Danielle — Female</option>
                 <option value="Polly.Gregory-Neural">Gregory — Male</option>
                 <option value="Polly.Joanna-Neural">Joanna — Female</option>
@@ -514,14 +514,19 @@
                 <option value="Polly.Justin-Neural">Justin — Male (child)</option>
                 <option value="Polly.Kevin-Neural">Kevin — Male (child)</option>
               </optgroup>
-              <optgroup label="British English">
+              <optgroup label="British English" class="voice-group-twilio">
                 <option value="Polly.Amy-Neural">Amy — Female</option>
                 <option value="Polly.Arthur-Neural">Arthur — Male</option>
                 <option value="Polly.Brian-Neural">Brian — Male</option>
                 <option value="Polly.Emma-Neural">Emma — Female</option>
               </optgroup>
-              <optgroup label="Australian English">
+              <optgroup label="Australian English" class="voice-group-twilio">
                 <option value="Polly.Olivia-Neural">Olivia — Female</option>
+              </optgroup>
+              <optgroup label="SignalWire (classic voices)" class="voice-group-signalwire">
+                <option value="woman">Woman</option>
+                <option value="man">Man</option>
+                <option value="alice">Alice</option>
               </optgroup>
             </select>
             <button class="btn-primary btn-sm" onclick="saveVoiceSetting()">Save</button>
@@ -529,10 +534,17 @@
           </div>
           <p style="color:var(--muted);font-size:.82rem;margin-top:.5rem">
             Use Test Call in Troubleshooting to hear the selected voice before saving.
-            Note: this voice list is Twilio/AWS-Polly specific — if VOICE_PROVIDER is set
-            to SignalWire, the SIGNALWIRE_VOICE env var is used instead.
+            The list above automatically shows only the voices your active voice
+            provider supports — Twilio's AWS Polly neural voices, or SignalWire's
+            classic voice set.
           </p>
+        </div>
+      </details>
 
+      <!-- ══ Troubleshooting ═════════════════════════════════════════ -->
+      <details class="settings-section">
+        <summary>Troubleshooting</summary>
+        <div class="settings-section-body">
           <!-- ── Pause Calls ───────────────────────────────────────── -->
           <h3>Call Control</h3>
           <p>Temporarily suspend all outgoing calls without changing any schedules. Scheduled jobs will still fire on time but will be silently skipped until calls are resumed.</p>
@@ -559,13 +571,7 @@
               <span id="recSettingsStatus" style="font-size:.82rem;color:var(--muted)"></span>
             </div>
           </div>
-        </div>
-      </details>
 
-      <!-- ══ Troubleshooting ═════════════════════════════════════════ -->
-      <details class="settings-section">
-        <summary>Troubleshooting</summary>
-        <div class="settings-section-body">
           <h3>Software Version</h3>
           <div id="versionInfo" class="settings-row" style="align-items:center;gap:1rem;flex-wrap:wrap">
             <span style="color:var(--muted);font-size:.85rem">Loading…</span>

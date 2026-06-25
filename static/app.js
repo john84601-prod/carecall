@@ -1512,6 +1512,7 @@ async function deleteAudio(filename) {
 async function loadSettings() {
   try {
     const s = await api('GET', '/settings');
+    _filterVoiceOptionsForProvider(s.voice_provider);
     const providerLabel = s.voice_provider === 'signalwire' ? 'SignalWire' : 'Twilio';
     const rows = [['Voice Provider', providerLabel]];
 
@@ -1567,11 +1568,30 @@ async function loadSettings() {
 
 // ── TTS voice setting ─────────────────────────────────────────────────────────
 
+function _filterVoiceOptionsForProvider(provider) {
+  const sel = document.getElementById('voiceSelect');
+  if (!sel) return;
+  const showClass = provider === 'signalwire' ? 'voice-group-signalwire' : 'voice-group-twilio';
+  const hideClass = provider === 'signalwire' ? 'voice-group-twilio' : 'voice-group-signalwire';
+  sel.querySelectorAll(`optgroup.${showClass}`).forEach(g => { g.disabled = false; g.hidden = false; });
+  sel.querySelectorAll(`optgroup.${hideClass}`).forEach(g => { g.disabled = true; g.hidden = true; });
+}
+
 async function loadVoiceSetting() {
   try {
     const r = await api('GET', '/voice');
     const sel = document.getElementById('voiceSelect');
-    if (sel && r.voice) sel.value = r.voice;
+    if (!sel || !r.voice) return;
+    const matched = Array.from(sel.options).some(o => o.value === r.voice);
+    if (matched) {
+      sel.value = r.voice;
+    } else {
+      // Saved value doesn't exist for the active provider (e.g. switched
+      // providers, or a stale Polly voice left over) — fall back to the
+      // first enabled option instead of leaving the dropdown blank.
+      const firstEnabled = Array.from(sel.options).find(o => !o.closest('optgroup').disabled);
+      if (firstEnabled) sel.value = firstEnabled.value;
+    }
   } catch(e) { /* non-critical */ }
 }
 
