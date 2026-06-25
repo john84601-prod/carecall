@@ -1,57 +1,78 @@
-import os
-from twilio.request_validator import RequestValidator
+import hmac
+import hashlib
+import base64
 
-os.environ.setdefault('FLASK_SECRET_KEY', 'x')  # not needed, just isolating import
-
-SIGNING_KEY = 'PSK_HEp1n7xaGuUcHMEJVgd7QP6y'
-URL = 'https://debit-tuesday-eskimo.ngrok-free.dev/webhook/call-status?call_type=reminder&log_id=125&session_id=24'
-RECEIVED = 'f8TaT9zM161Nzfm12kn7I0LlBsc='
+URL = 'https://debit-tuesday-eskimo.ngrok-free.dev/webhook/call-status?call_type=reminder&log_id=127&session_id=26'
 
 ALL_PARAMS = {
-    'CallSid': '45998e41-1360-4034-b8c7-227c945ef389',
+    'CallSid': '49ca9729-829b-4d97-b325-2dee20dab54c',
     'AccountSid': 'cf6941f3-55db-4207-ae48-96279ef4c088',
     'ApiVersion': '2010-04-01',
     'Direction': 'outbound-api',
     'From': '+17754107230',
     'To': '+17755270674',
-    'Timestamp': 'Thu, 25 Jun 2026 20:11:01 +0000',
+    'Timestamp': 'Thu, 25 Jun 2026 20:26:02 +0000',
     'CallStatus': 'completed',
     'CallbackSource': 'call-progress-events',
-    'CallDuration': '58',
+    'CallDuration': '57',
     'AudioInMos': '4.5',
     'AudioInAveragePtime': '20.01',
-    'AudioInMediaPacketCount': '2873',
+    'AudioInMediaPacketCount': '2829',
     'AudioInDtmfPacketCount': '0',
-    'AudioInSkipPacketCount': '0',
+    'AudioInSkipPacketCount': '1',
     'AudioInFlushPacketCount': '0',
     'AudioInLargestJbSize': '0',
-    'AudioInJitterMinVariance': '0.36',
-    'AudioInJitterMaxVariance': '1.53',
-    'AudioOutMediaPacketCount': '2686',
+    'AudioInJitterMinVariance': '0',
+    'AudioInJitterMaxVariance': '85.95',
+    'AudioOutMediaPacketCount': '2712',
     'AudioOutDtmfPacketCount': '0',
     'AudioOutLost': '0',
     'HangupDirection': 'outbound',
     'HangupBy': '+17754107230',
-    'SipCallId': '45998e41-1360-4034-b8c7-227c945ef389',
+    'SipCallId': '49ca9729-829b-4d97-b325-2dee20dab54c',
 }
 
 CORE_KEYS = {'CallSid', 'AccountSid', 'ApiVersion', 'Direction', 'From', 'To', 'CallStatus'}
 
-validator = RequestValidator(SIGNING_KEY)
+TARGET_SHA1   = '5acHHgjgygt2kb4Fi20IpBZzIvo='
+TARGET_SHA256 = 'v5TfDRJddv8Cyj0mTjyy7VfURAK7UmeP4ZO2UMZkbLs='
 
-print("Target (received):", RECEIVED)
-print()
-print("All params:        ", validator.compute_signature(URL, ALL_PARAMS))
-print("Core only:          ", validator.compute_signature(URL, {k: v for k, v in ALL_PARAMS.items() if k in CORE_KEYS}))
-print("No Timestamp:       ", validator.compute_signature(URL, {k: v for k, v in ALL_PARAMS.items() if k != 'Timestamp'}))
-print("No CallbackSource:  ", validator.compute_signature(URL, {k: v for k, v in ALL_PARAMS.items() if k != 'CallbackSource'}))
-print("No audio fields:    ", validator.compute_signature(URL, {k: v for k, v in ALL_PARAMS.items() if not k.startswith('Audio')}))
-print("Core + CallDuration:", validator.compute_signature(URL, {k: v for k, v in ALL_PARAMS.items() if k in CORE_KEYS or k == 'CallDuration'}))
+SIGNING_KEY = 'PSK_HEp1n7xaGuUcHMEJVgd7QP6y'
+API_TOKEN   = 'PTd5011997444a9a08171a0b170a2861576443ac8eb34f2d8d'
 
-print()
-print("Also trying base_url (no query string) for each:")
+
+def concat(url, params, keys=None):
+    data = url
+    for key in sorted(params.keys() if keys is None else keys):
+        data += key + params[key]
+    return data
+
+
+def sig(secret, data, algo):
+    return base64.b64encode(hmac.new(secret.encode(), data.encode(), algo).digest()).decode()
+
+
+param_sets = {
+    'all':         ALL_PARAMS,
+    'core_only':   {k: v for k, v in ALL_PARAMS.items() if k in CORE_KEYS},
+    'no_audio':    {k: v for k, v in ALL_PARAMS.items() if not k.startswith('Audio')},
+}
+
 from urllib.parse import urlsplit
-BASE_URL = urlsplit(URL)._replace(query='').geturl()
-print("base_url =", BASE_URL)
-print("All params on base_url:", validator.compute_signature(BASE_URL, ALL_PARAMS))
-print("Core only on base_url: ", validator.compute_signature(BASE_URL, {k: v for k, v in ALL_PARAMS.items() if k in CORE_KEYS}))
+base_url = urlsplit(URL)._replace(query='').geturl()
+url_variants = {'full_url': URL, 'base_url': base_url}
+
+print(f"target sha1   = {TARGET_SHA1}")
+print(f"target sha256 = {TARGET_SHA256}")
+print()
+
+for secret_name, secret in [('signing_key', SIGNING_KEY), ('api_token', API_TOKEN)]:
+    for url_name, url in url_variants.items():
+        for pset_name, pset in param_sets.items():
+            data = concat(url, pset)
+            s1 = sig(secret, data, hashlib.sha1)
+            s256 = sig(secret, data, hashlib.sha256)
+            match1 = ' <-- MATCH SHA1' if s1 == TARGET_SHA1 else ''
+            match256 = ' <-- MATCH SHA256' if s256 == TARGET_SHA256 else ''
+            print(f"{secret_name:12} {url_name:10} {pset_name:10} sha1={s1}{match1}")
+            print(f"{secret_name:12} {url_name:10} {pset_name:10} sha256={s256}{match256}")
