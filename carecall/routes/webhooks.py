@@ -110,6 +110,11 @@ def reminder_answer():
             else:
                 gather.say("This is your scheduled reminder. Have a great day.", voice=_voice())
             vr.append(gather)
+            # Fallback if the Gather times out without hitting its action URL
+            # (observed on SignalWire — it doesn't always POST to action on
+            # timeout the way Twilio does).
+            vr.say("Thank you. Goodbye.", voice=_voice())
+            vr.hangup()
 
         db.session.commit()
     else:
