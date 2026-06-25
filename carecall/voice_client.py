@@ -1,6 +1,11 @@
 import os
 import re
+import hmac
+import base64
+import hashlib
 import logging
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -9,16 +14,175 @@ def get_provider_name():
     return os.getenv('VOICE_PROVIDER', 'twilio').strip().lower()
 
 
-def get_client():
-    """Return a REST client for the configured provider.
+# ── SignalWire: thin REST client over `requests` ───────────────────────────────
+#
+# SignalWire's LAML Compatibility API is intentionally Twilio-API-shaped
+# (same endpoints, same form fields, same response JSON), but the official
+# `signalwire` pip package hard-pins twilio==6.54.0, which conflicts with
+# this project's twilio>=9.0.0 requirement. Talking to the HTTP API directly
+# avoids that conflict and needs nothing beyond `requests`.
 
-    SignalWire's Compatibility API SDK (`signalwire` package) mirrors the
-    twilio-python client shape (calls.create, messages.create, etc.), so
-    call sites that already use the Twilio SDK shape work unchanged.
-    """
+class _SWResult:
+    def __init__(self, data):
+        self._data = data
+
+    def __getattr__(self, name):
+        # SignalWire/Twilio JSON keys are snake_case already (e.g. "sid", "duration")
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(name)
+
+
+class _SWNumber(_SWResult):
+    def __init__(self, data, client):
+        super().__init__(data)
+        self._client = client
+
+    def update(self, sms_url=None, sms_method='POST'):
+        payload = {}
+        if sms_url is not None:
+            payload['SmsUrl'] = sms_url
+            payload['SmsMethod'] = sms_method
+        self._client._post(f"IncomingPhoneNumbers/{self._data['sid']}.json", payload)
+
+
+class _SWCallHandle:
+    def __init__(self, client, call_sid):
+        self._client = client
+        self._call_sid = call_sid
+
+    def update(self, url=None, method='POST'):
+        payload = {}
+        if url is not None:
+            payload['Url'] = url
+            payload['Method'] = method
+        self._client._post(f"Calls/{self._call_sid}.json", payload)
+
+
+class _SWRecordingHandle:
+    def __init__(self, client, recording_sid):
+        self._client = client
+        self._recording_sid = recording_sid
+
+    def fetch(self):
+        data = self._client._get(f"Recordings/{self._recording_sid}.json")
+        return _SWResult(data)
+
+    def delete(self):
+        self._client._delete(f"Recordings/{self._recording_sid}.json")
+
+
+class _SWMessages:
+    def __init__(self, client):
+        self._client = client
+
+    def create(self, to, from_, body):
+        data = self._client._post('Messages.json', {'To': to, 'From': from_, 'Body': body})
+        return _SWResult(data)
+
+
+class _SWCalls:
+    def __init__(self, client):
+        self._client = client
+
+    def create(self, **params):
+        # Map the camel-free kwarg names this codebase uses to the REST API's field names.
+        field_map = {
+            'to': 'To', 'from_': 'From', 'url': 'Url', 'method': 'Method',
+            'status_callback': 'StatusCallback',
+            'status_callback_event': 'StatusCallbackEvent',
+            'status_callback_method': 'StatusCallbackMethod',
+            'record': 'Record',
+            'recording_status_callback': 'RecordingStatusCallback',
+            'recording_status_callback_method': 'RecordingStatusCallbackMethod',
+            'machine_detection': 'MachineDetection',
+            'async_amd': 'AsyncAmd',
+            'async_amd_status_callback': 'AsyncAmdStatusCallback',
+            'async_amd_status_callback_method': 'AsyncAmdStatusCallbackMethod',
+        }
+        payload = {}
+        for key, value in params.items():
+            field = field_map.get(key, key)
+            if isinstance(value, bool):
+                value = 'true' if value else 'false'
+            payload[field] = value
+        data = self._client._post('Calls.json', payload)
+        return _SWResult(data)
+
+
+class _SWIncomingNumbers:
+    def __init__(self, client):
+        self._client = client
+
+    def list(self, phone_number=None):
+        params = {'PhoneNumber': phone_number} if phone_number else {}
+        data = self._client._get('IncomingPhoneNumbers.json', params=params)
+        return [_SWNumber(n, self._client) for n in data.get('incoming_phone_numbers', [])]
+
+
+class SignalWireClient:
+    """Minimal Twilio-SDK-shaped client for SignalWire's LAML Compatibility API."""
+
+    def __init__(self, project_id, token, space_url):
+        self.project_id = project_id
+        self.token = token
+        self.base_url = f"https://{space_url}/api/laml/2010-04-01/Accounts/{project_id}"
+        self.messages = _SWMessages(self)
+        self.calls = _SWCalls(self)
+        self.incoming_phone_numbers = _SWIncomingNumbers(self)
+
+    def __call__(self, *args, **kwargs):
+        raise TypeError("SignalWireClient is not callable directly")
+
+    def recordings(self, recording_sid):
+        return _SWRecordingHandle(self, recording_sid)
+
+    # Note: `client.calls(sid)` (call as a function) is used for mid-call
+    # redirects — implemented via a dedicated method below since `self.calls`
+    # is already the create()-only collection above.
+
+    def _auth(self):
+        return (self.project_id, self.token)
+
+    def _get(self, path, params=None):
+        r = requests.get(f"{self.base_url}/{path}", params=params, auth=self._auth(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path, data):
+        r = requests.post(f"{self.base_url}/{path}", data=data, auth=self._auth(), timeout=30)
+        r.raise_for_status()
+        return r.json() if r.content else {}
+
+    def _delete(self, path):
+        r = requests.delete(f"{self.base_url}/{path}", auth=self._auth(), timeout=30)
+        r.raise_for_status()
+
+
+class _CallsAccessor:
+    """Lets call sites write both client.calls.create(...) and client.calls(sid).update(...),
+    matching the twilio-python SDK's dual-purpose `calls` accessor."""
+
+    def __init__(self, sw_client):
+        self._sw_client = sw_client
+
+    def create(self, **params):
+        return self._sw_client._calls_create(**params)
+
+    def __call__(self, call_sid):
+        return _SWCallHandle(self._sw_client, call_sid)
+
+
+def _patch_calls_accessor(client):
+    client._calls_create = client.calls.create
+    client.calls = _CallsAccessor(client)
+    return client
+
+
+def get_client():
+    """Return a REST client for the configured provider."""
     provider = get_provider_name()
     if provider == 'signalwire':
-        from signalwire.rest import Client
         project_id = os.getenv('SIGNALWIRE_PROJECT_ID', '').strip()
         token      = os.getenv('SIGNALWIRE_AUTH_TOKEN', '').strip()
         space_url  = os.getenv('SIGNALWIRE_SPACE_URL', '').strip()
@@ -27,7 +191,7 @@ def get_client():
                 "SIGNALWIRE_PROJECT_ID, SIGNALWIRE_AUTH_TOKEN and "
                 "SIGNALWIRE_SPACE_URL must be set in .env"
             )
-        return Client(project_id, token, signalwire_space_url=space_url)
+        return _patch_calls_accessor(SignalWireClient(project_id, token, space_url))
 
     from twilio.rest import Client
     sid   = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
@@ -54,6 +218,28 @@ def normalize_phone(phone):
     """
     digits = re.sub(r'\D', '', phone or '')
     return digits[-10:] if len(digits) >= 10 else digits
+
+
+def get_recording_audio_url(recording_sid):
+    """Build the authenticated REST URL to fetch a recording's audio bytes."""
+    provider = get_provider_name()
+    if provider == 'signalwire':
+        space_url  = os.getenv('SIGNALWIRE_SPACE_URL', '').strip()
+        project_id = os.getenv('SIGNALWIRE_PROJECT_ID', '').strip()
+        return (f"https://{space_url}/api/laml/2010-04-01/Accounts/{project_id}"
+                f"/Recordings/{recording_sid}.mp3")
+    account_sid = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
+    return f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{recording_sid}.mp3"
+
+
+def get_recording_audio_auth():
+    """Return the (user, password) tuple for fetching recording audio."""
+    provider = get_provider_name()
+    if provider == 'signalwire':
+        return (os.getenv('SIGNALWIRE_PROJECT_ID', '').strip(),
+                os.getenv('SIGNALWIRE_AUTH_TOKEN', '').strip())
+    return (os.getenv('TWILIO_ACCOUNT_SID', '').strip(),
+            os.getenv('TWILIO_AUTH_TOKEN', '').strip())
 
 
 def send_sms(to_number, body):
@@ -155,9 +341,8 @@ def validate_webhook_signature(request):
         if not token:
             logger.warning('SIGNALWIRE_AUTH_TOKEN not set — skipping webhook signature validation')
             return True
-        from signalwire.request_validator import RequestValidator
         signature = request.headers.get('X-SignalWire-Signature', '')
-        return RequestValidator(token).validate(request.url, params, signature)
+        return _validate_signature(token, request.url, params, signature)
 
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
     if not token:
@@ -166,3 +351,16 @@ def validate_webhook_signature(request):
     from twilio.request_validator import RequestValidator
     signature = request.headers.get('X-Twilio-Signature', '')
     return RequestValidator(token).validate(request.url, params, signature)
+
+
+def _validate_signature(token, url, params, signature):
+    """Twilio/SignalWire-compatible webhook signature check: HMAC-SHA1 over
+    the URL followed by sorted form params, base64-encoded.
+    """
+    data = url
+    for key in sorted(params.keys()):
+        data += key + params[key]
+    computed = base64.b64encode(
+        hmac.new(token.encode('utf-8'), data.encode('utf-8'), hashlib.sha1).digest()
+    ).decode('utf-8')
+    return hmac.compare_digest(computed, signature)

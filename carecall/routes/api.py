@@ -1004,13 +1004,13 @@ def proxy_inbound_audio(msg_id):
     msg = db.session.get(InboundMessage, msg_id)
     if not msg or not msg.recording_sid:
         return jsonify({'error': 'Not found'}), 404
-    account_sid = os.getenv('TWILIO_ACCOUNT_SID', '')
-    auth_token  = os.getenv('TWILIO_AUTH_TOKEN', '')
-    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{msg.recording_sid}.mp3"
+    from carecall.voice_client import get_recording_audio_url, get_recording_audio_auth
+    url  = get_recording_audio_url(msg.recording_sid)
+    auth = get_recording_audio_auth()
     try:
-        r = _req.get(url, auth=(account_sid, auth_token), timeout=30)
+        r = _req.get(url, auth=auth, timeout=30)
         if r.status_code != 200:
-            current_app.logger.error(f"Twilio returned {r.status_code} for recording {msg.recording_sid}")
+            current_app.logger.error(f"Voice provider returned {r.status_code} for recording {msg.recording_sid}")
             return jsonify({'error': 'Recording not available'}), 502
         audio = r.content
         # Backfill duration if it was 0 when the recording callback fired
@@ -1081,15 +1081,14 @@ def proxy_call_recording_audio(log_id):
     log = db.session.get(CallLog, log_id)
     if not log or not log.recording_sid:
         return jsonify({'error': 'Not found'}), 404
-    account_sid = os.getenv('TWILIO_ACCOUNT_SID', '')
-    auth_token  = os.getenv('TWILIO_AUTH_TOKEN', '')
-    url = (f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}"
-           f"/Recordings/{log.recording_sid}.mp3")
+    from carecall.voice_client import get_recording_audio_url, get_recording_audio_auth
+    url  = get_recording_audio_url(log.recording_sid)
+    auth = get_recording_audio_auth()
     try:
-        r = _req.get(url, auth=(account_sid, auth_token), timeout=30)
+        r = _req.get(url, auth=auth, timeout=30)
         if r.status_code != 200:
             current_app.logger.error(
-                f"Twilio returned {r.status_code} for recording {log.recording_sid}")
+                f"Voice provider returned {r.status_code} for recording {log.recording_sid}")
             return jsonify({'error': 'Recording not available'}), 502
         return send_file(BytesIO(r.content), mimetype='audio/mpeg',
                          download_name='recording.mp3')
