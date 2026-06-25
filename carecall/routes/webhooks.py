@@ -39,7 +39,10 @@ def _public_url():
 
 
 def _voice():
-    """TTS voice — reads system_config.json, falls back to TWILIO_VOICE env var, then default."""
+    """TTS voice — reads system_config.json, falls back to TWILIO_VOICE env var, then a
+    provider-appropriate default. Polly.*-Neural voices are Twilio/AWS-Polly-specific and
+    aren't recognized by SignalWire's <Say>, so SignalWire gets a plain default instead.
+    """
     try:
         from carecall.routes.api import _load_system_config
         v = _load_system_config().get('tts_voice')
@@ -47,6 +50,9 @@ def _voice():
             return v
     except Exception:
         pass
+    from carecall.voice_client import get_provider_name
+    if get_provider_name() == 'signalwire':
+        return os.getenv('SIGNALWIRE_VOICE', 'woman')
     return os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural')
 
 
