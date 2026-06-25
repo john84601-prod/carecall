@@ -365,11 +365,12 @@ def validate_webhook_signature(request):
         validator = RequestValidator(signing_key)
         valid = validator.validate(request.url, params, signature)
         if not valid:
+            sig_headers = {k: v for k, v in request.headers.items() if 'signature' in k.lower()}
             logger.warning(
                 f"SignalWire sig debug — path={request.path!r} url={request.url!r} "
                 f"params={params!r} "
                 f"computed={validator.compute_signature(request.url, params)!r} "
-                f"received={signature!r}"
+                f"all_signature_headers={sig_headers!r}"
             )
         return valid
 
