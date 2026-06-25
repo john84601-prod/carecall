@@ -303,13 +303,19 @@ def make_call(to_number, answer_url, status_callback_url,
     """
     provider = get_provider_name()
     client = get_client()
+    # SignalWire's Compatibility API only accepts initiated/ringing/answered/
+    # completed as event names (no no-answer/busy/failed). A single
+    # 'completed' event still covers every terminal outcome — the actual
+    # result (busy, no-answer, failed, completed) arrives in that callback's
+    # CallStatus field on both providers.
+    status_events = ['completed'] if provider == 'signalwire' else ['completed', 'no-answer', 'busy', 'failed']
     params = dict(
         to=to_number,
         from_=get_from_number(),
         url=answer_url,
         method='POST',
         status_callback=status_callback_url,
-        status_callback_event=['completed', 'no-answer', 'busy', 'failed'],
+        status_callback_event=status_events,
         status_callback_method='POST',
     )
     if record:
