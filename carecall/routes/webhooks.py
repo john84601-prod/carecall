@@ -94,6 +94,7 @@ def reminder_answer():
                 vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
             else:
                 vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+            vr.hangup()
         else:
             # Human answered — wrap in Gather so any key press is captured as
             # a positive acknowledgment (failsafe for noisy lines / TTS issues).
@@ -113,6 +114,7 @@ def reminder_answer():
         db.session.commit()
     else:
         vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+        vr.hangup()
 
     return _xml(vr)
 
@@ -142,6 +144,7 @@ def reminder_keypress():
         vr.say("Thank you. Your reminder has been acknowledged. Have a great day.", voice=_voice())
     else:
         vr.say("Thank you. Goodbye.", voice=_voice())
+    vr.hangup()
     return _xml(vr)
 
 
@@ -196,8 +199,10 @@ def wellness_answer():
 
         vr.append(gather)
         vr.say("We did not receive your response. Goodbye.", voice=_voice())
+        vr.hangup()
     else:
         vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
+        vr.hangup()
 
     return _xml(vr)
 
@@ -271,6 +276,7 @@ def wellness_voicemail():
     else:
         vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
 
+    vr.hangup()
     return _xml(vr)
 
 
@@ -299,6 +305,7 @@ def wellness_keypress():
     else:
         vr.say("Session not found. Goodbye.", voice=_voice())
 
+    vr.hangup()
     return _xml(vr)
 
 
@@ -338,6 +345,7 @@ def emergency_answer():
                 "Please check on them as soon as possible.",
                 voice=_voice(),
             )
+            vr.hangup()
         else:
             # Human answered — gather keypress confirmation.
             gather = Gather(
@@ -358,8 +366,10 @@ def emergency_answer():
             )
             vr.append(gather)
             vr.say("We did not receive your acknowledgment. Goodbye.", voice=_voice())
+            vr.hangup()
     else:
         vr.say("Emergency wellness notification. Session not found. Goodbye.", voice=_voice())
+        vr.hangup()
 
     return _xml(vr)
 
@@ -397,6 +407,7 @@ def emergency_keypress():
     else:
         vr.say("Session not found. Goodbye.", voice=_voice())
 
+    vr.hangup()
     return _xml(vr)
 
 
@@ -605,6 +616,7 @@ def inbound_call():
         timeout=5,
     )
     vr.say("We did not receive a recording. Goodbye.", voice=_voice())
+    vr.hangup()
     return _xml(vr)
 
 
@@ -647,6 +659,7 @@ def inbound_recording():
 
     vr = VoiceResponse()
     vr.say("Thank you for your message. Goodbye.", voice=_voice())
+    vr.hangup()
     return _xml(vr)
 
 
@@ -656,4 +669,5 @@ def inbound_recording():
 def test_twiml():
     vr = VoiceResponse()
     vr.say("CareCall test call successful. Your configuration is working correctly.", voice=_voice())
+    vr.hangup()
     return _xml(vr)
