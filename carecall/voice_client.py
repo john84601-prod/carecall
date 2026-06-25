@@ -362,7 +362,16 @@ def validate_webhook_signature(request):
             logger.warning('SIGNALWIRE_SIGNING_KEY not set — skipping webhook signature validation')
             return True
         signature = request.headers.get('X-SignalWire-Signature', '')
-        return RequestValidator(signing_key).validate(request.url, params, signature)
+        validator = RequestValidator(signing_key)
+        valid = validator.validate(request.url, params, signature)
+        if not valid:
+            logger.warning(
+                f"SignalWire sig debug — path={request.path!r} url={request.url!r} "
+                f"params={params!r} "
+                f"computed={validator.compute_signature(request.url, params)!r} "
+                f"received={signature!r}"
+            )
+        return valid
 
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
     if not token:
