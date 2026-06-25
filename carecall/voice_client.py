@@ -361,7 +361,17 @@ def validate_webhook_signature(request):
         # SignalWire signs with the exact Twilio algorithm and even sends an
         # X-Twilio-Signature alias header, so reuse Twilio's own validator.
         signature = request.headers.get('X-SignalWire-Signature', '')
-        return RequestValidator(token).validate(request.url, params, signature)
+        validator = RequestValidator(token)
+        valid = validator.validate(request.url, params, signature)
+        if not valid:
+            logger.warning(
+                f"SignalWire sig debug — token_len={len(token)} token_prefix={token[:4]!r} "
+                f"url={request.url!r} base_url={request.base_url!r} "
+                f"computed_on_url={validator.compute_signature(request.url, params)!r} "
+                f"computed_on_base_url={validator.compute_signature(request.base_url, params)!r} "
+                f"received={signature!r}"
+            )
+        return valid
 
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
     if not token:
