@@ -144,19 +144,31 @@ class SignalWireClient:
     def _auth(self):
         return (self.project_id, self.token)
 
+    def _raise_with_body(self, r):
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            detail = r.text
+            try:
+                body = r.json()
+                detail = body.get('message') or body.get('detail') or body
+            except ValueError:
+                pass
+            raise requests.HTTPError(f"{e} — response body: {detail}", response=r) from None
+
     def _get(self, path, params=None):
         r = requests.get(f"{self.base_url}/{path}", params=params, auth=self._auth(), timeout=30)
-        r.raise_for_status()
+        self._raise_with_body(r)
         return r.json()
 
     def _post(self, path, data):
         r = requests.post(f"{self.base_url}/{path}", data=data, auth=self._auth(), timeout=30)
-        r.raise_for_status()
+        self._raise_with_body(r)
         return r.json() if r.content else {}
 
     def _delete(self, path):
         r = requests.delete(f"{self.base_url}/{path}", auth=self._auth(), timeout=30)
-        r.raise_for_status()
+        self._raise_with_body(r)
 
 
 class _CallsAccessor:
