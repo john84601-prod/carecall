@@ -1,7 +1,7 @@
 flask>=3.0.0
 flask-sqlalchemy>=3.1.0
 twilio>=9.0.0
-signalwire>=3.0.0
+signalwire>=2.0.0
 apscheduler>=3.10.0
 SQLAlchemy>=2.0.0
 pyngrok>=7.0.0
