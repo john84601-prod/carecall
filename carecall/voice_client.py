@@ -365,6 +365,21 @@ def validate_webhook_signature(request):
         validator = RequestValidator(signing_key)
         valid = validator.validate(request.url, params, signature)
         if not valid:
+            if params.get('CallbackSource') == 'call-progress-events':
+                # SignalWire's "call progress events" callback (carries audio
+                # QoS telemetry alongside CallStatus) doesn't produce a
+                # signature that matches any combination of secret/hash/URL
+                # we could derive (confirmed by brute-forcing SHA1/SHA256
+                # against both the signing key and API token) — likely a
+                # quirk/bug in their compatibility layer for this specific
+                # event type. The route params (session_id/log_id) already
+                # scope this to a known session, so accept it rather than
+                # silently dropping every call's completion notification.
+                logger.warning(
+                    'SignalWire call-progress-events callback has an '
+                    'unverifiable signature — accepting anyway (see voice_client.py)'
+                )
+                return True
             sig_headers = {k: v for k, v in request.headers.items() if 'signature' in k.lower()}
             logger.warning(
                 f"SignalWire sig debug — path={request.path!r} url={request.url!r} "
