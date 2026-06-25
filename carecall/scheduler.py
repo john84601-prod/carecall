@@ -83,7 +83,7 @@ def _register_sms_webhook():
     """Point the Twilio number's SMS webhook at our /webhook/sms-reply route."""
     try:
         from carecall.tunnel import get_public_url
-        from carecall.twilio_client import register_sms_webhook
+        from carecall.voice_client import register_sms_webhook
         url = get_public_url()
         register_sms_webhook(f"{url}/webhook/sms-reply")
     except Exception as e:
@@ -289,10 +289,10 @@ def _purge_old_recordings():
             return
 
         try:
-            from twilio.rest import Client as _TwilioClient
-            tw = _TwilioClient(_os.getenv('TWILIO_ACCOUNT_SID'), _os.getenv('TWILIO_AUTH_TOKEN'))
+            from carecall.voice_client import get_client
+            tw = get_client()
         except Exception as e:
-            logger.error(f"Recording cleanup: could not init Twilio client: {e}")
+            logger.error(f"Recording cleanup: could not init voice provider client: {e}")
             return
 
         deleted = 0
@@ -343,7 +343,7 @@ def _attempt_reminder_call(session_id):
     """Make one reminder call attempt with AMD so we know if a human or voicemail answered."""
     with _app.app_context():
         from carecall.models import ReminderSession, CallLog, db
-        from carecall.twilio_client import make_call
+        from carecall.voice_client import make_call
         from carecall.tunnel import get_public_url
 
         session = db.session.get(ReminderSession, session_id)
@@ -503,7 +503,7 @@ def _fire_wellness_check(schedule_id):
 def _attempt_wellness_call(session_id):
     with _app.app_context():
         from carecall.models import WellnessSession, CallLog, db
-        from carecall.twilio_client import make_call
+        from carecall.voice_client import make_call
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
@@ -589,7 +589,7 @@ def _schedule_wellness_retry(session_id, delay_minutes):
 def _call_next_emergency_contact(session_id):
     with _app.app_context():
         from carecall.models import WellnessSession, EmergencyContact, ScheduleContact, CallLog, db
-        from carecall.twilio_client import make_call
+        from carecall.voice_client import make_call
         from carecall.tunnel import get_public_url
 
         session = db.session.get(WellnessSession, session_id)
@@ -667,7 +667,7 @@ def _call_next_emergency_contact(session_id):
         # Also send an SMS if this contact has can_text enabled
         if next_contact.can_text:
             try:
-                from carecall.twilio_client import send_sms
+                from carecall.voice_client import send_sms
                 client_name = session.client.full_name if session.client else 'Your client'
                 sms_body = (
                     f"URGENT – CareCall Alert: {client_name} has not responded to "

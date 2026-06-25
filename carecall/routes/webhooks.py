@@ -4,13 +4,12 @@ from datetime import datetime
 from threading import Thread
 
 from flask import Blueprint, request, Response
-from twilio.request_validator import RequestValidator
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.twiml.messaging_response import MessagingResponse
 
 from carecall import db
 from carecall.models import CallLog, WellnessSession, EmergencyContact
-from carecall.twilio_client import normalize_phone
+from carecall.voice_client import normalize_phone, validate_webhook_signature
 
 logger = logging.getLogger(__name__)
 
@@ -18,24 +17,15 @@ webhooks_bp = Blueprint('webhooks', __name__)
 
 
 @webhooks_bp.before_request
-def _validate_twilio_signature():
-    """Reject any request that doesn't carry a valid Twilio signature.
+def _validate_provider_signature():
+    """Reject any request that doesn't carry a valid signature from the
+    configured voice provider.
 
-    Twilio signs every callback with the account's Auth Token.
     ProxyFix in create_app() ensures request.url reflects the public
-    ngrok URL that Twilio was given, so the HMAC check matches.
+    ngrok URL that the provider was given, so the HMAC check matches.
     """
-    auth_token = os.getenv('TWILIO_AUTH_TOKEN', '')
-    if not auth_token:
-        logger.warning('TWILIO_AUTH_TOKEN not set — skipping webhook signature validation')
-        return
-
-    validator  = RequestValidator(auth_token)
-    signature  = request.headers.get('X-Twilio-Signature', '')
-    params     = request.form.to_dict() if request.method == 'POST' else {}
-
-    if not validator.validate(request.url, params, signature):
-        logger.warning(f'Invalid Twilio signature rejected: {request.url} from {request.remote_addr}')
+    if not validate_webhook_signature(request):
+        logger.warning(f'Invalid webhook signature rejected: {request.url} from {request.remote_addr}')
         return Response('Forbidden', status=403)
 
 
@@ -214,7 +204,6 @@ def wellness_amd_result():
     For voicemail we redirect the live call to /wellness-voicemail so the
     message plays cleanly after the beep (DetectMessageEnd already waited).
     """
-    import os as _os
     session_id  = request.args.get('session_id', type=int)
     log_id      = request.args.get('log_id',     type=int)
     call_sid    = request.form.get('CallSid', '')
@@ -226,11 +215,8 @@ def wellness_amd_result():
     if is_machine and call_sid:
         # Interrupt the Gather and redirect to voicemail TwiML.
         try:
-            from twilio.rest import Client as _TwilioClient
-            tw = _TwilioClient(
-                _os.getenv('TWILIO_ACCOUNT_SID'),
-                _os.getenv('TWILIO_AUTH_TOKEN'),
-            )
+            from carecall.voice_client import get_client
+            tw = get_client()
             tw.calls(call_sid).update(
                 url=(f"{_public_url()}/webhook/wellness-voicemail"
                      f"?session_id={session_id}&log_id={log_id}"),

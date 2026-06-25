@@ -1031,8 +1031,8 @@ def proxy_inbound_audio(msg_id):
 
 
 def _get_twilio_client():
-    from twilio.rest import Client as _TwilioClient
-    return _TwilioClient(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
+    from carecall.voice_client import get_client
+    return get_client()
 
 
 # ── Call recording settings ────────────────────────────────────────────────────
@@ -1290,16 +1290,23 @@ def get_settings():
         public_url = get_public_url()
     except Exception:
         public_url = os.getenv('PUBLIC_URL', '(not available)')
+    from carecall.voice_client import get_provider_name, get_from_number
+    provider = get_provider_name()
+    try:
+        from_number = get_from_number()
+    except RuntimeError:
+        from_number = '(not set)'
     return jsonify({
+        'voice_provider': provider,
         'twilio_account_sid': os.getenv('TWILIO_ACCOUNT_SID', '(not set)'),
-        'twilio_from_number': os.getenv('TWILIO_FROM_NUMBER', '(not set)'),
+        'from_number': from_number,
         'public_url': public_url,
     })
 
 
 @api_bp.route('/test-call', methods=['POST'])
 def test_call():
-    from carecall.twilio_client import make_call
+    from carecall.voice_client import make_call
     from carecall.tunnel import get_public_url
     data = request.get_json()
     to = _normalize_phone((data or {}).get('to', ''))
@@ -1315,7 +1322,7 @@ def test_call():
 
 @api_bp.route('/test-sms', methods=['POST'])
 def test_sms():
-    from carecall.twilio_client import send_sms
+    from carecall.voice_client import send_sms
     data = request.get_json()
     to   = _normalize_phone((data or {}).get('to', ''))
     name = (data or {}).get('name', 'this contact')

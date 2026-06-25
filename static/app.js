@@ -1510,12 +1510,16 @@ async function loadSettings() {
     const s = await api('GET', '/settings');
     document.getElementById('settingsInfo').innerHTML = `
       <div class="settings-row">
+        <div class="settings-key">Voice Provider</div>
+        <div class="settings-val">${esc(s.voice_provider)}</div>
+      </div>
+      <div class="settings-row">
         <div class="settings-key">Twilio Account SID</div>
         <div class="settings-val">${esc(s.twilio_account_sid)}</div>
       </div>
       <div class="settings-row">
-        <div class="settings-key">Twilio From Number</div>
-        <div class="settings-val">${esc(s.twilio_from_number)}</div>
+        <div class="settings-key">From Number</div>
+        <div class="settings-val">${esc(s.from_number)}</div>
       </div>
       <div class="settings-row">
         <div class="settings-key">Public Webhook URL</div>
