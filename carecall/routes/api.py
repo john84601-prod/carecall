@@ -1237,7 +1237,7 @@ def get_system_status():
         'calls_paused':      calls_paused,
         'uptime':            uptime,
         'server_time':       server_time,
-        'all_ok':            scheduler_ok and url_ok and twilio_ok and not calls_paused,
+        'all_ok':            scheduler_ok and url_ok and provider_ok and not calls_paused,
     })
 
 
