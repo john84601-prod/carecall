@@ -416,6 +416,40 @@ tr:hover td { background: #f8fafc; }
 .settings-panel { max-width: 600px; }
 .settings-panel h2 { margin-bottom: 1rem; font-size: 1.1rem; }
 .settings-panel h3 { margin: 1.5rem 0 .5rem; font-size: .95rem; }
+.settings-panel h3:first-child { margin-top: 0; }
+
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+.settings-section > summary {
+  cursor: pointer;
+  padding: .9rem 1.1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: #f8f9fb;
+  user-select: none;
+}
+.settings-section > summary::-webkit-details-marker { display: none; }
+.settings-section > summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: .85rem;
+  transition: transform .15s;
+  display: inline-block;
+}
+.settings-section[open] > summary::before { transform: rotate(90deg); }
+.settings-section-body {
+  padding: 0 1.1rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.settings-section-body h3:first-of-type { margin-top: 1.25rem; }
 
 .info-box {
   background: #e8f4fb;

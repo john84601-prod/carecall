@@ -1287,6 +1287,14 @@ def get_version():
     })
 
 
+def _mask_secret(s, keep=4):
+    if not s:
+        return '(not set)'
+    if len(s) <= keep * 2:
+        return '•' * len(s)
+    return f"{s[:keep]}…{s[-keep:]}"
+
+
 @api_bp.route('/settings', methods=['GET'])
 def get_settings():
     from carecall.tunnel import get_public_url
@@ -1300,11 +1308,25 @@ def get_settings():
         from_number = get_from_number()
     except RuntimeError:
         from_number = '(not set)'
+
     return jsonify({
         'voice_provider': provider,
-        'twilio_account_sid': os.getenv('TWILIO_ACCOUNT_SID', '(not set)'),
         'from_number': from_number,
         'public_url': public_url,
+        'twilio': {
+            'account_sid': os.getenv('TWILIO_ACCOUNT_SID', '') or '(not set)',
+            'auth_token':  _mask_secret(os.getenv('TWILIO_AUTH_TOKEN', '')),
+            'from_number': os.getenv('TWILIO_FROM_NUMBER', '') or '(not set)',
+            'voice':       os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural'),
+        },
+        'signalwire': {
+            'project_id':  os.getenv('SIGNALWIRE_PROJECT_ID', '') or '(not set)',
+            'auth_token':  _mask_secret(os.getenv('SIGNALWIRE_AUTH_TOKEN', '')),
+            'space_url':   os.getenv('SIGNALWIRE_SPACE_URL', '') or '(not set)',
+            'from_number': os.getenv('SIGNALWIRE_FROM_NUMBER', '') or '(not set)',
+            'signing_key': _mask_secret(os.getenv('SIGNALWIRE_SIGNING_KEY', '')),
+            'voice':       os.getenv('SIGNALWIRE_VOICE', 'woman'),
+        },
     })
 
 

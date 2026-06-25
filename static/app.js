@@ -1512,23 +1512,35 @@ async function deleteAudio(filename) {
 async function loadSettings() {
   try {
     const s = await api('GET', '/settings');
-    document.getElementById('settingsInfo').innerHTML = `
+    const providerLabel = s.voice_provider === 'signalwire' ? 'SignalWire' : 'Twilio';
+    const rows = [['Voice Provider', providerLabel]];
+
+    if (s.voice_provider === 'signalwire') {
+      const sw = s.signalwire || {};
+      rows.push(
+        ['Project ID',  sw.project_id],
+        ['Auth Token',  sw.auth_token],
+        ['Space URL',   sw.space_url],
+        ['Signing Key', sw.signing_key],
+        ['From Number', sw.from_number],
+        ['TTS Voice',   sw.voice],
+      );
+    } else {
+      const tw = s.twilio || {};
+      rows.push(
+        ['Account SID',  tw.account_sid],
+        ['Auth Token',   tw.auth_token],
+        ['From Number',  tw.from_number],
+        ['TTS Voice',    tw.voice],
+      );
+    }
+    rows.push(['Public Webhook URL', s.public_url]);
+
+    document.getElementById('settingsInfo').innerHTML = rows.map(([key, val]) => `
       <div class="settings-row">
-        <div class="settings-key">Voice Provider</div>
-        <div class="settings-val">${esc(s.voice_provider)}</div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-key">Twilio Account SID</div>
-        <div class="settings-val">${esc(s.twilio_account_sid)}</div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-key">From Number</div>
-        <div class="settings-val">${esc(s.from_number)}</div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-key">Public Webhook URL</div>
-        <div class="settings-val">${esc(s.public_url)}</div>
-      </div>`;
+        <div class="settings-key">${esc(key)}</div>
+        <div class="settings-val">${esc(val)}</div>
+      </div>`).join('');
     const inboundEl = document.getElementById('inboundWebhookUrl');
     if (inboundEl) inboundEl.textContent = (s.public_url || '(public URL not available)') + '/webhook/inbound-call';
   } catch (e) {
