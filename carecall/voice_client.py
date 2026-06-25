@@ -1,8 +1,5 @@
 import os
 import re
-import hmac
-import base64
-import hashlib
 import logging
 
 import requests
@@ -354,38 +351,21 @@ def validate_webhook_signature(request):
     provider = get_provider_name()
     params = request.form.to_dict() if request.method == 'POST' else {}
 
+    from twilio.request_validator import RequestValidator
+
     if provider == 'signalwire':
         token = os.getenv('SIGNALWIRE_AUTH_TOKEN', '').strip()
         if not token:
             logger.warning('SIGNALWIRE_AUTH_TOKEN not set — skipping webhook signature validation')
             return True
+        # SignalWire signs with the exact Twilio algorithm and even sends an
+        # X-Twilio-Signature alias header, so reuse Twilio's own validator.
         signature = request.headers.get('X-SignalWire-Signature', '')
-        valid = _validate_signature(token, request.url, params, signature)
-        if not valid:
-            sig_headers = {k: v for k, v in request.headers.items() if 'signature' in k.lower()}
-            logger.warning(
-                f"SignalWire signature mismatch debug — url={request.url!r} "
-                f"params={params!r} signature_headers={sig_headers!r}"
-            )
-        return valid
+        return RequestValidator(token).validate(request.url, params, signature)
 
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
     if not token:
         logger.warning('TWILIO_AUTH_TOKEN not set — skipping webhook signature validation')
         return True
-    from twilio.request_validator import RequestValidator
     signature = request.headers.get('X-Twilio-Signature', '')
     return RequestValidator(token).validate(request.url, params, signature)
-
-
-def _validate_signature(token, url, params, signature):
-    """Twilio/SignalWire-compatible webhook signature check: HMAC-SHA1 over
-    the URL followed by sorted form params, base64-encoded.
-    """
-    data = url
-    for key in sorted(params.keys()):
-        data += key + params[key]
-    computed = base64.b64encode(
-        hmac.new(token.encode('utf-8'), data.encode('utf-8'), hashlib.sha1).digest()
-    ).decode('utf-8')
-    return hmac.compare_digest(computed, signature)
