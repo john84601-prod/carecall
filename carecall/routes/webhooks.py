@@ -155,21 +155,60 @@ def reminder_keypress():
 
 # ── Wellness calls ─────────────────────────────────────────────────────────────
 
+def _wellness_voicemail_voiceresponse(session):
+    """Shared voicemail TwiML for a wellness call, used both when AMD result
+    arrives synchronously on the answer webhook (SignalWire) and when it
+    arrives later via the async redirect (Twilio)."""
+    vr = VoiceResponse()
+    if session:
+        client   = session.client
+        schedule = session.schedule
+        key      = _required_keypress()
+
+        if schedule.mp3_filename:
+            vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
+        else:
+            vr.say(
+                f"Hello {client.first_name}, this is a wellness check call. "
+                f"We were unable to reach you. Please call back or press {key} "
+                "when we try again to confirm you are okay.",
+                voice=_voice(),
+            )
+    else:
+        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
+    vr.hangup()
+    return vr
+
+
 @webhooks_bp.route('/wellness-answer', methods=['POST'])
 def wellness_answer():
-    """Fires immediately when the call connects (asyncAmd mode).
+    """Fires when the call connects.
 
-    The AMD result comes separately via /wellness-amd-result, so we don't
-    know yet whether a human or machine answered.  We always respond with a
-    Gather so the message starts playing right away — no 3-5 second silence.
-    If the AMD callback determines it's voicemail, it redirects the live
-    call to /wellness-voicemail before the Gather timeout expires.
+    On Twilio (asyncAmd mode) this fires immediately, before AMD has a
+    result — AnsweredBy is absent here, and the result comes later via
+    /wellness-amd-result, which redirects the live call to
+    /wellness-voicemail if it's a machine.
+
+    On SignalWire (no async AMD support) AMD already ran synchronously by
+    the time this fires, so AnsweredBy is already present — handle the
+    voicemail case directly here instead of waiting for a callback that
+    will never come.
     """
     session_id = request.args.get('session_id', type=int)
     log_id     = request.args.get('log_id',     type=int)
 
     session = db.session.get(WellnessSession, session_id) if session_id else None
     log     = db.session.get(CallLog,         log_id)     if log_id     else None
+
+    answered_by = request.form.get('AnsweredBy', '')
+    is_machine  = answered_by.startswith('machine')
+
+    if answered_by and is_machine:
+        # AMD already resolved synchronously — go straight to voicemail.
+        if log:
+            log.status = 'left_voicemail'
+            db.session.commit()
+        return _xml(_wellness_voicemail_voiceresponse(session))
 
     if log:
         log.status = 'answered'
@@ -262,27 +301,7 @@ def wellness_voicemail():
         log.status = 'left_voicemail'
         db.session.commit()
 
-    vr = VoiceResponse()
-
-    if session:
-        client   = session.client
-        schedule = session.schedule
-        key      = _required_keypress()
-
-        if schedule.mp3_filename:
-            vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
-        else:
-            vr.say(
-                f"Hello {client.first_name}, this is a wellness check call. "
-                f"We were unable to reach you. Please call back or press {key} "
-                "when we try again to confirm you are okay.",
-                voice=_voice(),
-            )
-    else:
-        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
-
-    vr.hangup()
-    return _xml(vr)
+    return _xml(_wellness_voicemail_voiceresponse(session))
 
 
 @webhooks_bp.route('/wellness-keypress', methods=['POST'])
