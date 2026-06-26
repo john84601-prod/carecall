@@ -103,7 +103,7 @@ def reminder_answer():
                 action=f"{_public_url()}/webhook/reminder-keypress"
                        f"?log_id={log_id}&session_id={session_id}",
                 method='POST',
-                timeout=20,
+                timeout=10,
             )
             if schedule and schedule.mp3_filename:
                 gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
@@ -226,7 +226,7 @@ def wellness_answer():
             action=f"{_public_url()}/webhook/wellness-keypress"
                    f"?session_id={session_id}&log_id={log_id}",
             method='POST',
-            timeout=20,
+            timeout=10,
         )
 
         if schedule.mp3_filename:
