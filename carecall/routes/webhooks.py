@@ -221,15 +221,12 @@ def wellness_answer():
         schedule = session.schedule
         key      = _required_keypress()
 
-        # Generous timeout — DetectMessageEnd can take up to ~30 s on some
-        # carriers to confirm the beep before the AMD callback fires and
-        # redirects the call away from this Gather.
         gather = Gather(
             num_digits=1,
             action=f"{_public_url()}/webhook/wellness-keypress"
                    f"?session_id={session_id}&log_id={log_id}",
             method='POST',
-            timeout=30,
+            timeout=20,
         )
 
         if schedule.mp3_filename:
