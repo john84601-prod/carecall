@@ -636,6 +636,9 @@ def inbound_recording():
     call_sid      = request.form.get('CallSid', '')
     from_number   = request.form.get('From', '')
 
+    if not recording_sid:
+        logger.warning(f"inbound-recording: no RecordingSid — all params: {request.form.to_dict()!r}")
+
     try:
         duration_int = int(duration)
     except ValueError:
