@@ -569,7 +569,18 @@ def handle_wellness_no_response(session_id):
             session.status = 'escalating'
             db.session.commit()
             logger.info(f"Session {session_id}: max attempts reached — escalating to emergency contacts")
-            _call_next_emergency_contact(session_id)
+            # Small delay before dialing — placing this call immediately,
+            # in the same instant as the just-completed wellness call's
+            # final status callback, can trip the voice provider's
+            # outbound call rate limit (observed: SignalWire "Exceeded
+            # Outbound Call Rate").
+            _scheduler.add_job(
+                func=_call_next_emergency_contact,
+                trigger='date',
+                run_date=datetime.now() + timedelta(seconds=5),
+                args=[session_id],
+                id=f"emergency_start_{session_id}_{int(datetime.now().timestamp())}",
+            )
 
 
 def _schedule_wellness_retry(session_id, delay_minutes):
