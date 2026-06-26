@@ -1004,10 +1004,18 @@ def proxy_inbound_audio(msg_id):
     from io import BytesIO
     from flask import send_file
     msg = db.session.get(InboundMessage, msg_id)
-    if not msg or not msg.recording_sid:
+    if not msg or not (msg.recording_sid or msg.recording_url):
         return jsonify({'error': 'Not found'}), 404
     from carecall.voice_client import get_recording_audio_url, get_recording_audio_auth
-    url  = get_recording_audio_url(msg.recording_sid)
+    # SignalWire inbound recordings give us a direct file URL (no Twilio-style
+    # REST lookup exists for them); Twilio recordings need the REST URL built
+    # from the SID.
+    if msg.recording_url:
+        url = msg.recording_url
+        mimetype = 'audio/wav' if url.lower().endswith('.wav') else 'audio/mpeg'
+    else:
+        url = get_recording_audio_url(msg.recording_sid)
+        mimetype = 'audio/mpeg'
     auth = get_recording_audio_auth()
     try:
         r = _req.get(url, auth=auth, timeout=30)
@@ -1016,7 +1024,9 @@ def proxy_inbound_audio(msg_id):
             return jsonify({'error': 'Recording not available'}), 502
         audio = r.content
         # Backfill duration if it was 0 when the recording callback fired
-        if not msg.duration_seconds and audio:
+        # (Twilio only — SignalWire's inbound RecordingUrl has no matching
+        # REST resource to fetch metadata from).
+        if not msg.duration_seconds and audio and not msg.recording_url:
             try:
                 rec = _get_twilio_client().recordings(msg.recording_sid).fetch()
                 if rec.duration:
@@ -1026,7 +1036,7 @@ def proxy_inbound_audio(msg_id):
                 pass
         # send_file with BytesIO lets Werkzeug handle Range requests,
         # which browsers require to play audio via the <audio> element.
-        return send_file(BytesIO(audio), mimetype='audio/mpeg', download_name='message.mp3')
+        return send_file(BytesIO(audio), mimetype=mimetype, download_name='message.mp3')
     except Exception as e:
         current_app.logger.error(f"Audio proxy error for {msg.recording_sid}: {e}")
         return jsonify({'error': 'Could not fetch recording'}), 502

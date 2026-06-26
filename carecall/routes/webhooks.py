@@ -632,12 +632,18 @@ def inbound_recording():
     from datetime import datetime as _dt
 
     recording_sid = request.form.get('RecordingSid', '')
+    recording_url = request.form.get('RecordingUrl', '')
     duration      = request.form.get('RecordingDuration', '0')
     call_sid      = request.form.get('CallSid', '')
     from_number   = request.form.get('From', '')
 
-    if not recording_sid:
-        logger.warning(f"inbound-recording: no RecordingSid — all params: {request.form.to_dict()!r}")
+    # SignalWire's compatibility Record verb doesn't send RecordingSid — only
+    # a direct RecordingUrl to the recording file. Derive an identifier from
+    # the URL so we still have something to key on, and keep the full URL so
+    # playback can fetch it directly instead of reconstructing a Twilio-style
+    # REST lookup that doesn't exist for SignalWire inbound recordings.
+    if not recording_sid and recording_url:
+        recording_sid = recording_url.rsplit('/', 1)[-1].rsplit('.', 1)[0]
 
     try:
         duration_int = int(duration)
@@ -645,7 +651,7 @@ def inbound_recording():
         duration_int = 0
 
     # Skip zero-length recordings (caller hung up immediately)
-    if duration_int > 0 and recording_sid:
+    if duration_int > 0 and (recording_sid or recording_url):
         norm = normalize_phone(from_number)
         matched = next(
             (c for c in Client.query.all() if normalize_phone(c.phone) == norm),
@@ -654,6 +660,7 @@ def inbound_recording():
         msg = InboundMessage(
             call_sid=call_sid,
             recording_sid=recording_sid,
+            recording_url=recording_url,
             from_number=from_number,
             duration_seconds=duration_int,
             received_at=_dt.utcnow(),

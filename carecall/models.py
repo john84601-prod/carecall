@@ -299,6 +299,7 @@ class InboundMessage(db.Model):
     id               = db.Column(db.Integer, primary_key=True)
     call_sid         = db.Column(db.String(50), default='')
     recording_sid    = db.Column(db.String(50), default='')
+    recording_url    = db.Column(db.Text, default='')
     from_number      = db.Column(db.String(20), default='')
     duration_seconds = db.Column(db.Integer, default=0)
     received_at      = db.Column(db.DateTime, default=datetime.utcnow)
@@ -314,6 +315,7 @@ class InboundMessage(db.Model):
             'id':                  self.id,
             'call_sid':            self.call_sid or '',
             'recording_sid':       self.recording_sid or '',
+            'recording_url':       self.recording_url or '',
             'from_number':         self.from_number or '',
             'duration_seconds':    self.duration_seconds or 0,
             'received_at':         self.received_at.isoformat() + 'Z',
