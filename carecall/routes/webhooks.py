@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 from datetime import datetime
@@ -711,6 +712,13 @@ def inbound_recording():
 # to the query string, so the same session_id/log_id/contact_id params used
 # by the TwiML routes above are preserved here.
 
+# client_state Telnyx echoes back on the resulting call.gather.ended webhook
+# when we cancel a gather ourselves (see call.machine.premium.detection.ended
+# below) — lets us tell "we stopped this for an AMD redirect" apart from a
+# real gather timeout/keypress. Telnyx requires this field to be base64.
+_AMD_REDIRECT_STATE = base64.b64encode(b'amd_redirect').decode()
+
+
 def _telnyx_safe_command(ccid, action, payload=None):
     """telnyx_command(), but tolerant of the call having already ended
     (e.g. the person hung up before our gather/AMD-triggered response was
@@ -745,9 +753,12 @@ def telnyx_events():
 
     if event_type == 'call.answered':
         if call_type in ('reminder', 'wellness', 'emergency'):
-            # These call types always request AMD (see scheduler.py) — wait for
-            # the AMD result event before speaking/gathering, mirroring this
-            # app's synchronous-AMD handling on SignalWire/Twilio-sync.
+            # True async AMD: start the keypress gather immediately, assuming
+            # a human, rather than waiting for the AMD result — this is what
+            # eliminates the multi-second silence a human caller would
+            # otherwise hear. If AMD later reports a machine, we interrupt
+            # this gather (see call.machine.premium.detection.ended below).
+            _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id)
             return '', 200
         # No AMD requested for this call (e.g. /test-call) — nothing else will
         # fire to prompt a response, so speak immediately.
@@ -758,16 +769,15 @@ def telnyx_events():
         return '', 200
 
     if event_type in ('call.machine.premium.detection.ended', 'call.machine.detection.ended'):
-        # This fires as soon as Telnyx decides human vs. machine — for a
-        # machine, that can happen WHILE the answering machine's own greeting
-        # is still playing, before the beep. Speaking here would talk over
-        # the greeting and likely get cut off, same symptom observed live
-        # (only the tail ~2s of the message got recorded). For "human" we can
-        # gather immediately since there's no greeting/beep to wait for.
+        # Fires once Telnyx decides human vs. machine. For "human" the gather
+        # started on call.answered above is already running — nothing to do.
+        # For "machine", that gather is mid-flight talking over the answering
+        # machine's own greeting, so stop it and wait for
+        # call.machine.premium.greeting.ended (the actual beep) before
+        # speaking the voicemail message.
         result = p.get('result', 'human')
         if result in ('machine', 'fax'):
-            return '', 200  # wait for call.machine.premium.greeting.ended (beep) instead
-        _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id)
+            _telnyx_safe_command(ccid, 'gather_stop', {'client_state': _AMD_REDIRECT_STATE})
         return '', 200
 
     if event_type == 'call.machine.premium.greeting.ended':
@@ -778,6 +788,12 @@ def telnyx_events():
         return '', 200
 
     if event_type == 'call.gather.ended':
+        if p.get('client_state') == _AMD_REDIRECT_STATE:
+            # This is the gather we deliberately cancelled above because AMD
+            # detected a machine — not a real (non-)response from a human.
+            # The voicemail message gets spoken separately, once the
+            # greeting/beep event arrives.
+            return '', 200
         digits = p.get('digits', '') or ''
         _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits)
         return '', 200
@@ -863,6 +879,14 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
         session = db.session.get(ReminderSession, session_id) if session_id else None
         if log:
             log.status = 'reached_human'
+            # A reminder is considered resolved the moment a human answers
+            # (the keypress below only upgrades it to 'acknowledged') —
+            # matching reminder_answer()'s TwiML behavior. Without this,
+            # handle_reminder_no_response() would see session.status still
+            # 'calling' and wrongly schedule a retry call.
+            if session and session.status == 'calling':
+                session.status = 'reached_human'
+                session.resolved_at = datetime.utcnow()
             db.session.commit()
         schedule = log.schedule if log else None
         gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
