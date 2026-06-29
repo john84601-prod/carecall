@@ -758,11 +758,23 @@ def telnyx_events():
         return '', 200
 
     if event_type in ('call.machine.premium.detection.ended', 'call.machine.detection.ended'):
-        is_machine = p.get('result', 'human') in ('machine', 'fax')
-        if is_machine:
-            _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id)
-        else:
-            _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id)
+        # This fires as soon as Telnyx decides human vs. machine — for a
+        # machine, that can happen WHILE the answering machine's own greeting
+        # is still playing, before the beep. Speaking here would talk over
+        # the greeting and likely get cut off, same symptom observed live
+        # (only the tail ~2s of the message got recorded). For "human" we can
+        # gather immediately since there's no greeting/beep to wait for.
+        result = p.get('result', 'human')
+        if result in ('machine', 'fax'):
+            return '', 200  # wait for call.machine.premium.greeting.ended (beep) instead
+        _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id)
+        return '', 200
+
+    if event_type == 'call.machine.premium.greeting.ended':
+        # Fires once the answering machine's greeting has actually finished
+        # (result=beep_detected or prompt_ended) — NOW it's safe to speak the
+        # voicemail message without it overlapping the greeting.
+        _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id)
         return '', 200
 
     if event_type == 'call.gather.ended':
