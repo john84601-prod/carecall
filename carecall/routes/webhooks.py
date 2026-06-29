@@ -42,7 +42,15 @@ def _voice():
     """TTS voice — reads system_config.json, falls back to TWILIO_VOICE env var, then a
     provider-appropriate default. Polly.*-Neural voices are Twilio/AWS-Polly-specific and
     aren't recognized by SignalWire's <Say>, so SignalWire gets a plain default instead.
+
+    Telnyx is stricter still — its <speak> only accepts literally "female" or
+    "male" for en-US — so any saved system_config voice (which may be a
+    Twilio Polly name or SignalWire's "woman") is ignored for Telnyx rather
+    than passed through and rejected by their API.
     """
+    from carecall.voice_client import get_provider_name
+    if get_provider_name() == 'telnyx':
+        return os.getenv('TELNYX_VOICE', 'female')
     try:
         from carecall.routes.api import _load_system_config
         v = _load_system_config().get('tts_voice')
@@ -50,7 +58,6 @@ def _voice():
             return v
     except Exception:
         pass
-    from carecall.voice_client import get_provider_name
     if get_provider_name() == 'signalwire':
         return os.getenv('SIGNALWIRE_VOICE', 'woman')
     return os.getenv('TWILIO_VOICE', 'Polly.Joanna-Neural')
