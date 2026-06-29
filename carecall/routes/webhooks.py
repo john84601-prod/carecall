@@ -766,6 +766,15 @@ def telnyx_events():
 
     log = db.session.get(CallLog, log_id) if log_id else None
 
+    if not call_type:
+        # No call_type query param means this isn't a call we placed
+        # ourselves (those always carry one via _telnyx_make_call's webhook
+        # URL rewrite) — it's an inbound call to the Telnyx number, which has
+        # no query string at all on its webhook_url. Handle entirely
+        # separately from the outbound reminder/wellness/emergency/test flows
+        # above, since the event sequence (answer → greet → record) differs.
+        return _telnyx_inbound_events(event_type, ccid, p)
+
     if event_type == 'call.initiated':
         return '', 200
 
@@ -1014,6 +1023,109 @@ def _telnyx_handle_hangup(call_type, session_id, log, contact_id, payload):
         session = db.session.get(WellnessSession, session_id)
         if session and not session.emergency_acknowledged and session.status != 'cancelled':
             Thread(target=handle_emergency_no_response, args=(session_id, contact_id), daemon=True).start()
+
+
+# ── Telnyx inbound calls (mirrors inbound_call()/inbound_recording() above) ────
+#
+# Sequence: call.initiated -> answer -> call.answered -> speak/play greeting
+# -> call.speak.ended/call.playback.ended -> record_start -> caller leaves a
+# message -> call.recording.saved -> save it + speak a thank-you -> that
+# speak's own call.speak.ended -> hangup. client_state tags the greeting
+# command so its speak.ended is told apart from the thank-you message's.
+
+_INBOUND_GREETING_STATE = base64.b64encode(b'inbound_greeting').decode()
+
+
+def _telnyx_inbound_events(event_type, ccid, p):
+    if event_type == 'call.initiated':
+        _telnyx_safe_command(ccid, 'answer')
+        return '', 200
+
+    if event_type == 'call.answered':
+        from flask import current_app
+        from carecall.routes.api import _load_system_config, _INBOUND_GREETING_FILE
+
+        cfg             = _load_system_config()
+        greeting_type   = cfg.get('inbound_greeting_type', 'script')
+        greeting_script = cfg.get('inbound_greeting_script',
+                                   "You have reached CareCall. "
+                                   "Please leave a message after the tone and we will follow up with you.")
+        greeting_path   = os.path.join(current_app.config['UPLOAD_FOLDER'], _INBOUND_GREETING_FILE)
+
+        if greeting_type == 'recording' and os.path.isfile(greeting_path):
+            _telnyx_safe_command(ccid, 'playback_start', {
+                'audio_url': f"{_public_url()}/uploads/{_INBOUND_GREETING_FILE}",
+                'client_state': _INBOUND_GREETING_STATE,
+            })
+        else:
+            _telnyx_safe_command(ccid, 'speak', {
+                'payload': greeting_script, 'voice': _voice(), 'language': 'en-US',
+                'client_state': _INBOUND_GREETING_STATE,
+            })
+        return '', 200
+
+    if event_type in ('call.speak.ended', 'call.playback.ended'):
+        if p.get('client_state') == _INBOUND_GREETING_STATE:
+            # Greeting just finished — start recording the caller's message.
+            _telnyx_safe_command(ccid, 'record_start', {
+                'format': 'mp3', 'channels': 'single',
+                'play_beep': True, 'max_length': 120, 'timeout_secs': 5,
+            })
+        else:
+            # This was the post-recording thank-you message finishing.
+            _telnyx_safe_command(ccid, 'hangup')
+        return '', 200
+
+    if event_type == 'call.recording.saved':
+        _telnyx_save_inbound_recording(ccid, p)
+        return '', 200
+
+    if event_type == 'call.hangup':
+        return '', 200  # caller hung up mid-flow — nothing to clean up
+
+    return '', 200
+
+
+def _telnyx_save_inbound_recording(ccid, p):
+    from carecall.models import InboundMessage, Client
+
+    recording_id  = p.get('recording_id', '')
+    recording_url = (p.get('recording_urls') or {}).get('mp3', '')
+    from_number   = p.get('from', '')
+    started       = p.get('recording_started_at')
+    ended         = p.get('recording_ended_at')
+
+    duration_int = 0
+    if started and ended:
+        try:
+            from datetime import datetime as _dt
+            fmt = '%Y-%m-%dT%H:%M:%S.%fZ'
+            duration_int = int((_dt.strptime(ended, fmt) - _dt.strptime(started, fmt)).total_seconds())
+        except (ValueError, TypeError):
+            pass
+
+    if duration_int > 0 and (recording_id or recording_url):
+        norm = normalize_phone(from_number)
+        matched = next(
+            (c for c in Client.query.all() if normalize_phone(c.phone) == norm),
+            None,
+        )
+        msg = InboundMessage(
+            call_sid=ccid,
+            recording_sid=recording_id,
+            recording_url=recording_url,
+            from_number=from_number,
+            duration_seconds=duration_int,
+            received_at=datetime.utcnow(),
+            matched_client_id=matched.id if matched else None,
+        )
+        db.session.add(msg)
+        db.session.commit()
+        logger.info(f"Inbound voicemail saved (Telnyx): {recording_id} from {from_number} ({duration_int}s)")
+        _telnyx_prompt_speak(ccid, 'inbound_thanks_closing')
+    else:
+        logger.info(f"Inbound call from {from_number} — no recording (duration={duration_int}s)")
+        _telnyx_prompt_speak(ccid, 'inbound_no_recording_closing')
 
 
 # ── Test TwiML endpoint ────────────────────────────────────────────────────────
