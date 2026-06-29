@@ -711,6 +711,18 @@ def inbound_recording():
 # to the query string, so the same session_id/log_id/contact_id params used
 # by the TwiML routes above are preserved here.
 
+def _telnyx_safe_command(ccid, action, payload=None):
+    """telnyx_command(), but tolerant of the call having already ended
+    (e.g. the person hung up before our gather/AMD-triggered response was
+    ready) — that's a normal race, not a bug worth a 500 + Telnyx retry."""
+    from carecall.voice_client import telnyx_command
+    try:
+        return telnyx_command(ccid, action, payload)
+    except Exception as e:
+        logger.warning(f"Telnyx command {action!r} on {ccid} failed (call likely already ended): {e}")
+        return None
+
+
 @webhooks_bp.route('/telnyx', methods=['POST'])
 def telnyx_events():
     from carecall.voice_client import telnyx_command
@@ -739,7 +751,7 @@ def telnyx_events():
             return '', 200
         # No AMD requested for this call (e.g. /test-call) — nothing else will
         # fire to prompt a response, so speak immediately.
-        telnyx_command(ccid, 'speak', {
+        _telnyx_safe_command(ccid, 'speak', {
             'payload': "CareCall test call successful. Your configuration is working correctly.",
             'voice': _voice(), 'language': 'en-US',
         })
@@ -759,10 +771,7 @@ def telnyx_events():
         return '', 200
 
     if event_type in ('call.speak.ended', 'call.playback.ended'):
-        try:
-            telnyx_command(ccid, 'hangup')
-        except Exception as e:
-            logger.warning(f"Telnyx hangup after speak/playback failed (call likely already ended): {e}")
+        _telnyx_safe_command(ccid, 'hangup')
         return '', 200
 
     if event_type == 'call.hangup':
@@ -786,9 +795,9 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
             db.session.commit()
         schedule = log.schedule if log else None
         if schedule and schedule.mp3_filename:
-            telnyx_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+            _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
         else:
-            telnyx_command(ccid, 'speak', {
+            _telnyx_safe_command(ccid, 'speak', {
                 'payload': "This is your scheduled reminder. Have a great day.",
                 'voice': _voice(), 'language': 'en-US',
             })
@@ -802,16 +811,16 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
         if session:
             client, schedule, key = session.client, session.schedule, _required_keypress()
             if schedule.mp3_filename:
-                telnyx_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+                _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
             else:
-                telnyx_command(ccid, 'speak', {
+                _telnyx_safe_command(ccid, 'speak', {
                     'payload': (f"Hello {client.first_name}, this is a wellness check call. "
                                 f"We were unable to reach you. Please call back or press {key} "
                                 "when we try again to confirm you are okay."),
                     'voice': _voice(), 'language': 'en-US',
                 })
         else:
-            telnyx_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
+            _telnyx_safe_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
                                             'voice': _voice(), 'language': 'en-US'})
         return
 
@@ -822,14 +831,14 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
             log.status = 'left_voicemail'
             db.session.commit()
         if session and contact:
-            telnyx_command(ccid, 'speak', {
+            _telnyx_safe_command(ccid, 'speak', {
                 'payload': (f"Urgent message for {contact.name}. {session.client.full_name} has not "
                             f"responded to {session.current_attempt} wellness check calls. "
                             "Please check on them as soon as possible."),
                 'voice': _voice(), 'language': 'en-US',
             })
         else:
-            telnyx_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
+            _telnyx_safe_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
                                             'voice': _voice(), 'language': 'en-US'})
         return
 
@@ -847,11 +856,11 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
         gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
         if schedule and schedule.mp3_filename:
             gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
-            telnyx_command(ccid, 'gather_using_audio', gp)
+            _telnyx_safe_command(ccid, 'gather_using_audio', gp)
         else:
             gp.update(payload="This is your scheduled reminder. Have a great day.",
                       voice=_voice(), language='en-US')
-            telnyx_command(ccid, 'gather_using_speak', gp)
+            _telnyx_safe_command(ccid, 'gather_using_speak', gp)
         return
 
     if call_type == 'wellness':
@@ -860,20 +869,20 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             log.status = 'answered'
             db.session.commit()
         if not session:
-            telnyx_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
+            _telnyx_safe_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
                                             'voice': _voice(), 'language': 'en-US'})
             return
         client, schedule, key = session.client, session.schedule, _required_keypress()
         gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
         if schedule.mp3_filename:
             gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
-            telnyx_command(ccid, 'gather_using_audio', gp)
+            _telnyx_safe_command(ccid, 'gather_using_audio', gp)
         else:
             gp.update(
                 payload=f"Hello {client.first_name}, this is your wellness check call. Please press {key} to confirm you are okay.",
                 voice=_voice(), language='en-US',
             )
-            telnyx_command(ccid, 'gather_using_speak', gp)
+            _telnyx_safe_command(ccid, 'gather_using_speak', gp)
         return
 
     if call_type == 'emergency':
@@ -883,11 +892,11 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             log.status = 'answered'
             db.session.commit()
         if not (session and contact):
-            telnyx_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
+            _telnyx_safe_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
                                             'voice': _voice(), 'language': 'en-US'})
             return
         key = _required_keypress()
-        telnyx_command(ccid, 'gather_using_speak', {
+        _telnyx_safe_command(ccid, 'gather_using_speak', {
             'payload': (f"This is an urgent wellness notification. {session.client.full_name} has not responded to "
                         f"{session.current_attempt} wellness check calls. As their emergency contact, please press {key} "
                         "to confirm you will follow up with them immediately."),
@@ -915,7 +924,7 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
                     session.resolved_at = datetime.utcnow()
                 msg = "Thank you. Your reminder has been acknowledged. Have a great day."
             db.session.commit()
-        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
         return
 
     if call_type == 'wellness':
@@ -933,7 +942,7 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
             db.session.commit()
         else:
             msg = "Session not found. Goodbye."
-        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
         return
 
     if call_type == 'emergency':
@@ -955,7 +964,7 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
             db.session.commit()
         else:
             msg = "Session not found. Goodbye."
-        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
         return
 
 
