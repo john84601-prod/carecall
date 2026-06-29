@@ -1513,7 +1513,9 @@ async function loadSettings() {
   try {
     const s = await api('GET', '/settings');
     _filterVoiceOptionsForProvider(s.voice_provider);
-    const providerLabel = s.voice_provider === 'signalwire' ? 'SignalWire' : 'Twilio';
+    const providerLabel = s.voice_provider === 'signalwire' ? 'SignalWire'
+                         : s.voice_provider === 'telnyx'     ? 'Telnyx'
+                         : 'Twilio';
     const rows = [['Voice Provider', providerLabel]];
 
     if (s.voice_provider === 'signalwire') {
@@ -1525,6 +1527,14 @@ async function loadSettings() {
         ['Signing Key', sw.signing_key],
         ['From Number', sw.from_number],
         ['TTS Voice',   sw.voice],
+      );
+    } else if (s.voice_provider === 'telnyx') {
+      const tx = s.telnyx || {};
+      rows.push(
+        ['API Key',       tx.api_key],
+        ['Connection ID', tx.connection_id],
+        ['From Number',   tx.from_number],
+        ['TTS Voice',     tx.voice],
       );
     } else {
       const tw = s.twilio || {};
@@ -1571,10 +1581,14 @@ async function loadSettings() {
 function _filterVoiceOptionsForProvider(provider) {
   const sel = document.getElementById('voiceSelect');
   if (!sel) return;
-  const showClass = provider === 'signalwire' ? 'voice-group-signalwire' : 'voice-group-twilio';
-  const hideClass = provider === 'signalwire' ? 'voice-group-twilio' : 'voice-group-signalwire';
-  sel.querySelectorAll(`optgroup.${showClass}`).forEach(g => { g.disabled = false; g.hidden = false; });
-  sel.querySelectorAll(`optgroup.${hideClass}`).forEach(g => { g.disabled = true; g.hidden = true; });
+  const showClass = provider === 'signalwire' ? 'voice-group-signalwire'
+                   : provider === 'telnyx'     ? 'voice-group-telnyx'
+                   : 'voice-group-twilio';
+  sel.querySelectorAll('optgroup').forEach(g => {
+    const show = g.classList.contains(showClass);
+    g.disabled = !show;
+    g.hidden = !show;
+  });
 }
 
 async function loadVoiceSetting() {

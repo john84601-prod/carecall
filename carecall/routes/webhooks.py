@@ -51,6 +51,17 @@ def _voice():
     """
     from carecall.voice_client import get_provider_name
     if get_provider_name() == 'telnyx':
+        # Telnyx accepts Polly.*-Neural and Azure.* names (same format as
+        # Twilio's Polly voices) as well as generic "female"/"male". Only the
+        # SignalWire-classic names ("woman"/"man"/"alice") are incompatible.
+        _sw_only = {'woman', 'man', 'alice'}
+        try:
+            from carecall.routes.api import _load_system_config
+            v = _load_system_config().get('tts_voice', '')
+            if v and v not in _sw_only:
+                return v
+        except Exception:
+            pass
         return os.getenv('TELNYX_VOICE', 'female')
     try:
         from carecall.routes.api import _load_system_config

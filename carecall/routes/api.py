@@ -834,6 +834,13 @@ _ALLOWED_VOICES = [
     'Polly.Olivia-Neural',
     # SignalWire classic voices
     'woman', 'man', 'alice',
+    # Telnyx — generic + Azure neural (Telnyx also accepts the Polly.*-Neural
+    # names above directly, so no separate Polly list is needed here)
+    'female', 'male',
+    'Azure.en-US-JennyNeural', 'Azure.en-US-AriaNeural', 'Azure.en-US-SaraNeural',
+    'Azure.en-US-NancyNeural', 'Azure.en-US-AmberNeural', 'Azure.en-US-JaneNeural',
+    'Azure.en-US-GuyNeural', 'Azure.en-US-DavisNeural', 'Azure.en-US-TonyNeural',
+    'Azure.en-US-JasonNeural',
 ]
 
 _DEFAULT_VOICE = 'Polly.Joanna-Neural'
@@ -1425,6 +1432,12 @@ def get_settings():
             'from_number': os.getenv('SIGNALWIRE_FROM_NUMBER', '') or '(not set)',
             'signing_key': _mask_secret(os.getenv('SIGNALWIRE_SIGNING_KEY', '')),
             'voice':       os.getenv('SIGNALWIRE_VOICE', 'woman'),
+        },
+        'telnyx': {
+            'api_key':       _mask_secret(os.getenv('TELNYX_API_KEY', '')),
+            'connection_id': os.getenv('TELNYX_CONNECTION_ID', '') or '(not set)',
+            'from_number':   os.getenv('TELNYX_FROM_NUMBER', '') or '(not set)',
+            'voice':         _load_system_config().get('tts_voice') or os.getenv('TELNYX_VOICE', 'female'),
         },
     })
 

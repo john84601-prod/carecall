@@ -499,7 +499,7 @@
           <p>Voice used for all automated calls — reminders, wellness checks, and emergency notifications.</p>
           <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
             <select id="voiceSelect" style="padding:.45rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.875rem;background:#fff;min-width:220px">
-              <optgroup label="American English" class="voice-group-twilio">
+              <optgroup label="American English (Polly Neural)" class="voice-group-twilio voice-group-telnyx">
                 <option value="Polly.Danielle-Neural">Danielle — Female</option>
                 <option value="Polly.Gregory-Neural">Gregory — Male</option>
                 <option value="Polly.Joanna-Neural">Joanna — Female</option>
@@ -514,14 +514,30 @@
                 <option value="Polly.Justin-Neural">Justin — Male (child)</option>
                 <option value="Polly.Kevin-Neural">Kevin — Male (child)</option>
               </optgroup>
-              <optgroup label="British English" class="voice-group-twilio">
+              <optgroup label="British English (Polly Neural)" class="voice-group-twilio voice-group-telnyx">
                 <option value="Polly.Amy-Neural">Amy — Female</option>
                 <option value="Polly.Arthur-Neural">Arthur — Male</option>
                 <option value="Polly.Brian-Neural">Brian — Male</option>
                 <option value="Polly.Emma-Neural">Emma — Female</option>
               </optgroup>
-              <optgroup label="Australian English" class="voice-group-twilio">
+              <optgroup label="Australian English (Polly Neural)" class="voice-group-twilio voice-group-telnyx">
                 <option value="Polly.Olivia-Neural">Olivia — Female</option>
+              </optgroup>
+              <optgroup label="American English (Azure Neural)" class="voice-group-telnyx">
+                <option value="Azure.en-US-JennyNeural">Jenny — Female (conversational)</option>
+                <option value="Azure.en-US-AriaNeural">Aria — Female (natural)</option>
+                <option value="Azure.en-US-SaraNeural">Sara — Female (calm)</option>
+                <option value="Azure.en-US-NancyNeural">Nancy — Female</option>
+                <option value="Azure.en-US-AmberNeural">Amber — Female</option>
+                <option value="Azure.en-US-JaneNeural">Jane — Female</option>
+                <option value="Azure.en-US-GuyNeural">Guy — Male</option>
+                <option value="Azure.en-US-DavisNeural">Davis — Male</option>
+                <option value="Azure.en-US-TonyNeural">Tony — Male</option>
+                <option value="Azure.en-US-JasonNeural">Jason — Male</option>
+              </optgroup>
+              <optgroup label="Telnyx (generic)" class="voice-group-telnyx">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
               </optgroup>
               <optgroup label="SignalWire (classic voices)" class="voice-group-signalwire">
                 <option value="woman">Woman</option>
@@ -535,8 +551,9 @@
           <p style="color:var(--muted);font-size:.82rem;margin-top:.5rem">
             Use Test Call in Troubleshooting to hear the selected voice before saving.
             The list above automatically shows only the voices your active voice
-            provider supports — Twilio's AWS Polly neural voices, or SignalWire's
-            classic voice set.
+            provider supports — Twilio's AWS Polly neural voices, SignalWire's
+            classic voice set, or Telnyx's Polly/Azure neural voices and generic
+            female/male options.
           </p>
         </div>
       </details>
