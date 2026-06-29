@@ -69,6 +69,48 @@ def _required_keypress():
     return os.getenv('REQUIRED_KEYPRESS', '1')
 
 
+# ── Global system prompts (editable text or custom recording, see prompts.py) ──
+#
+# Every TTS line below is routed through one of these two helpers instead of
+# being hardcoded, so it can be overridden globally from the dashboard
+# (Settings → Messages) without touching code. A schedule's own per-client
+# mp3 (schedule.mp3_filename) still takes priority over these when set —
+# these are the fallback used whenever no client-specific recording exists.
+
+def _twiml_prompt(target, key, **kwargs):
+    """Say or play system prompt `key` onto a VoiceResponse or Gather object
+    (both expose .say()/.play(), so either can be passed as `target`)."""
+    from carecall.prompts import get_prompt_recording_path, get_prompt_text
+    rec = get_prompt_recording_path(key)
+    if rec:
+        target.play(f"{_public_url()}/uploads/{os.path.basename(rec)}")
+    else:
+        target.say(get_prompt_text(key, **kwargs), voice=_voice())
+
+
+def _telnyx_prompt_speak(ccid, key, **kwargs):
+    from carecall.prompts import get_prompt_recording_path, get_prompt_text
+    rec = get_prompt_recording_path(key)
+    if rec:
+        _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{os.path.basename(rec)}"})
+    else:
+        _telnyx_safe_command(ccid, 'speak', {
+            'payload': get_prompt_text(key, **kwargs), 'voice': _voice(), 'language': 'en-US',
+        })
+
+
+def _telnyx_prompt_gather(ccid, key, gather_params, **kwargs):
+    from carecall.prompts import get_prompt_recording_path, get_prompt_text
+    rec = get_prompt_recording_path(key)
+    gp = dict(gather_params)
+    if rec:
+        gp['audio_url'] = f"{_public_url()}/uploads/{os.path.basename(rec)}"
+        _telnyx_safe_command(ccid, 'gather_using_audio', gp)
+    else:
+        gp.update(payload=get_prompt_text(key, **kwargs), voice=_voice(), language='en-US')
+        _telnyx_safe_command(ccid, 'gather_using_speak', gp)
+
+
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 @webhooks_bp.route('/reminder-answer', methods=['POST'])
@@ -101,7 +143,7 @@ def reminder_answer():
             if schedule and schedule.mp3_filename:
                 vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
             else:
-                vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+                _twiml_prompt(vr, 'reminder_message')
             vr.hangup()
         else:
             # Human answered — wrap in Gather so any key press is captured as
@@ -116,17 +158,17 @@ def reminder_answer():
             if schedule and schedule.mp3_filename:
                 gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
             else:
-                gather.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+                _twiml_prompt(gather, 'reminder_message')
             vr.append(gather)
             # Fallback if the Gather times out without hitting its action URL
             # (observed on SignalWire — it doesn't always POST to action on
             # timeout the way Twilio does).
-            vr.say("Thank you. Goodbye.", voice=_voice())
+            _twiml_prompt(vr, 'reminder_unsuccessful_closing')
             vr.hangup()
 
         db.session.commit()
     else:
-        vr.say("This is your scheduled reminder. Have a great day.", voice=_voice())
+        _twiml_prompt(vr, 'reminder_message')
         vr.hangup()
 
     return _xml(vr)
@@ -154,9 +196,9 @@ def reminder_keypress():
         db.session.commit()
 
     if digits == _required_keypress():
-        vr.say("Thank you. Your reminder has been acknowledged. Have a great day.", voice=_voice())
+        _twiml_prompt(vr, 'success_goodbye')
     else:
-        vr.say("Thank you. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'reminder_unsuccessful_closing')
     vr.hangup()
     return _xml(vr)
 
@@ -176,14 +218,9 @@ def _wellness_voicemail_voiceresponse(session):
         if schedule.mp3_filename:
             vr.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
         else:
-            vr.say(
-                f"Hello {client.first_name}, this is a wellness check call. "
-                f"We were unable to reach you. Please call back or press {key} "
-                "when we try again to confirm you are okay.",
-                voice=_voice(),
-            )
+            _twiml_prompt(vr, 'wellness_voicemail_message', first_name=client.first_name, key=key)
     else:
-        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'session_not_found_closing')
     vr.hangup()
     return vr
 
@@ -240,17 +277,13 @@ def wellness_answer():
         if schedule.mp3_filename:
             gather.play(f"{_public_url()}/uploads/{schedule.mp3_filename}")
         else:
-            gather.say(
-                f"Hello {client.first_name}, this is your wellness check call. "
-                f"Please press {key} to confirm you are okay.",
-                voice=_voice(),
-            )
+            _twiml_prompt(gather, 'wellness_message', first_name=client.first_name, key=key)
 
         vr.append(gather)
-        vr.say("We did not receive your response. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'wellness_unsuccessful_closing')
         vr.hangup()
     else:
-        vr.say("Wellness check call. Session not found. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'session_not_found_closing')
         vr.hangup()
 
     return _xml(vr)
@@ -326,13 +359,13 @@ def wellness_keypress():
             log.status = 'acknowledged'
             session.status = 'acknowledged'
             session.resolved_at = datetime.utcnow()
-            vr.say("Thank you. We have recorded your check-in. Take care.", voice=_voice())
+            _twiml_prompt(vr, 'success_goodbye')
         else:
             log.status = 'wrong-keypress'
-            vr.say("That was not the expected response. Goodbye.", voice=_voice())
+            _twiml_prompt(vr, 'wellness_unsuccessful_closing')
         db.session.commit()
     else:
-        vr.say("Session not found. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'session_not_found_closing')
 
     vr.hangup()
     return _xml(vr)
@@ -367,13 +400,9 @@ def emergency_answer():
         if is_machine:
             # Voicemail — DetectMessageEnd already waited for the beep.
             # Speak clearly without a Gather (voicemail can't press keys).
-            vr.say(
-                f"Urgent message for {contact.name}. "
-                f"{client.full_name} has not responded to "
-                f"{session.current_attempt} wellness check calls. "
-                "Please check on them as soon as possible.",
-                voice=_voice(),
-            )
+            _twiml_prompt(vr, 'emergency_voicemail_message',
+                          contact_name=contact.name, client_name=client.full_name,
+                          attempt=session.current_attempt)
             vr.hangup()
         else:
             # Human answered — gather keypress confirmation.
@@ -386,18 +415,13 @@ def emergency_answer():
                 method='POST',
                 timeout=20,
             )
-            gather.say(
-                f"This is an urgent wellness notification. {client.full_name} has not responded to "
-                f"{session.current_attempt} wellness check calls. "
-                f"As their emergency contact, please press {key} to confirm "
-                "you will follow up with them immediately.",
-                voice=_voice(),
-            )
+            _twiml_prompt(gather, 'emergency_message',
+                          client_name=client.full_name, attempt=session.current_attempt, key=key)
             vr.append(gather)
-            vr.say("We did not receive your acknowledgment. Goodbye.", voice=_voice())
+            _twiml_prompt(vr, 'emergency_unsuccessful_closing')
             vr.hangup()
     else:
-        vr.say("Emergency wellness notification. Session not found. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'session_not_found_closing')
         vr.hangup()
 
     return _xml(vr)
@@ -424,17 +448,13 @@ def emergency_keypress():
             session.acknowledged_by_contact_id = contact.id
             session.status = 'escalated'
             session.resolved_at = datetime.utcnow()
-            vr.say(
-                f"Thank you {contact.name}. Your acknowledgment has been recorded. "
-                "Please follow up with the client as soon as possible.",
-                voice=_voice(),
-            )
+            _twiml_prompt(vr, 'emergency_ack_instruction', contact_name=contact.name)
         else:
             log.status = 'wrong-keypress'
-            vr.say("Incorrect key pressed. Goodbye.", voice=_voice())
+            _twiml_prompt(vr, 'emergency_unsuccessful_closing')
         db.session.commit()
     else:
-        vr.say("Session not found. Goodbye.", voice=_voice())
+        _twiml_prompt(vr, 'session_not_found_closing')
 
     vr.hangup()
     return _xml(vr)
@@ -644,7 +664,7 @@ def inbound_call():
         method='POST',
         timeout=5,
     )
-    vr.say("We did not receive a recording. Goodbye.", voice=_voice())
+    _twiml_prompt(vr, 'inbound_no_recording_closing')
     vr.hangup()
     return _xml(vr)
 
@@ -697,7 +717,7 @@ def inbound_recording():
         logger.info(f"Inbound call from {from_number} — no recording (duration={duration_int}s)")
 
     vr = VoiceResponse()
-    vr.say("Thank you for your message. Goodbye.", voice=_voice())
+    _twiml_prompt(vr, 'inbound_thanks_closing')
     vr.hangup()
     return _xml(vr)
 
@@ -733,8 +753,6 @@ def _telnyx_safe_command(ccid, action, payload=None):
 
 @webhooks_bp.route('/telnyx', methods=['POST'])
 def telnyx_events():
-    from carecall.voice_client import telnyx_command
-
     body       = request.get_json(silent=True) or {}
     data       = body.get('data', {})
     event_type = data.get('event_type', '')
@@ -762,10 +780,7 @@ def telnyx_events():
             return '', 200
         # No AMD requested for this call (e.g. /test-call) — nothing else will
         # fire to prompt a response, so speak immediately.
-        _telnyx_safe_command(ccid, 'speak', {
-            'payload': "CareCall test call successful. Your configuration is working correctly.",
-            'voice': _voice(), 'language': 'en-US',
-        })
+        _telnyx_prompt_speak(ccid, 'test_call_message')
         return '', 200
 
     if event_type in ('call.machine.premium.detection.ended', 'call.machine.detection.ended'):
@@ -810,8 +825,6 @@ def telnyx_events():
 
 
 def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
-    from carecall.voice_client import telnyx_command
-
     if call_type == 'reminder':
         from carecall.models import ReminderSession
         session = db.session.get(ReminderSession, session_id) if session_id else None
@@ -825,10 +838,7 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
         if schedule and schedule.mp3_filename:
             _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
         else:
-            _telnyx_safe_command(ccid, 'speak', {
-                'payload': "This is your scheduled reminder. Have a great day.",
-                'voice': _voice(), 'language': 'en-US',
-            })
+            _telnyx_prompt_speak(ccid, 'reminder_message')
         return
 
     if call_type == 'wellness':
@@ -841,15 +851,9 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
             if schedule.mp3_filename:
                 _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
             else:
-                _telnyx_safe_command(ccid, 'speak', {
-                    'payload': (f"Hello {client.first_name}, this is a wellness check call. "
-                                f"We were unable to reach you. Please call back or press {key} "
-                                "when we try again to confirm you are okay."),
-                    'voice': _voice(), 'language': 'en-US',
-                })
+                _telnyx_prompt_speak(ccid, 'wellness_voicemail_message', first_name=client.first_name, key=key)
         else:
-            _telnyx_safe_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
-                                            'voice': _voice(), 'language': 'en-US'})
+            _telnyx_prompt_speak(ccid, 'session_not_found_closing')
         return
 
     if call_type == 'emergency':
@@ -859,21 +863,15 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
             log.status = 'left_voicemail'
             db.session.commit()
         if session and contact:
-            _telnyx_safe_command(ccid, 'speak', {
-                'payload': (f"Urgent message for {contact.name}. {session.client.full_name} has not "
-                            f"responded to {session.current_attempt} wellness check calls. "
-                            "Please check on them as soon as possible."),
-                'voice': _voice(), 'language': 'en-US',
-            })
+            _telnyx_prompt_speak(ccid, 'emergency_voicemail_message',
+                                  contact_name=contact.name, client_name=session.client.full_name,
+                                  attempt=session.current_attempt)
         else:
-            _telnyx_safe_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
-                                            'voice': _voice(), 'language': 'en-US'})
+            _telnyx_prompt_speak(ccid, 'session_not_found_closing')
         return
 
 
 def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
-    from carecall.voice_client import telnyx_command
-
     if call_type == 'reminder':
         from carecall.models import ReminderSession
         session = db.session.get(ReminderSession, session_id) if session_id else None
@@ -894,9 +892,7 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
             _telnyx_safe_command(ccid, 'gather_using_audio', gp)
         else:
-            gp.update(payload="This is your scheduled reminder. Have a great day.",
-                      voice=_voice(), language='en-US')
-            _telnyx_safe_command(ccid, 'gather_using_speak', gp)
+            _telnyx_prompt_gather(ccid, 'reminder_message', gp)
         return
 
     if call_type == 'wellness':
@@ -905,8 +901,7 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             log.status = 'answered'
             db.session.commit()
         if not session:
-            _telnyx_safe_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
-                                            'voice': _voice(), 'language': 'en-US'})
+            _telnyx_prompt_speak(ccid, 'session_not_found_closing')
             return
         client, schedule, key = session.client, session.schedule, _required_keypress()
         gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
@@ -914,11 +909,7 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
             _telnyx_safe_command(ccid, 'gather_using_audio', gp)
         else:
-            gp.update(
-                payload=f"Hello {client.first_name}, this is your wellness check call. Please press {key} to confirm you are okay.",
-                voice=_voice(), language='en-US',
-            )
-            _telnyx_safe_command(ccid, 'gather_using_speak', gp)
+            _telnyx_prompt_gather(ccid, 'wellness_message', gp, first_name=client.first_name, key=key)
         return
 
     if call_type == 'emergency':
@@ -928,29 +919,23 @@ def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
             log.status = 'answered'
             db.session.commit()
         if not (session and contact):
-            _telnyx_safe_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
-                                            'voice': _voice(), 'language': 'en-US'})
+            _telnyx_prompt_speak(ccid, 'session_not_found_closing')
             return
         key = _required_keypress()
-        _telnyx_safe_command(ccid, 'gather_using_speak', {
-            'payload': (f"This is an urgent wellness notification. {session.client.full_name} has not responded to "
-                        f"{session.current_attempt} wellness check calls. As their emergency contact, please press {key} "
-                        "to confirm you will follow up with them immediately."),
-            'voice': _voice(), 'language': 'en-US',
-            'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 20000, 'valid_digits': '0123456789',
-        })
+        gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 20000, 'valid_digits': '0123456789'}
+        _telnyx_prompt_gather(ccid, 'emergency_message', gp,
+                               client_name=session.client.full_name, attempt=session.current_attempt, key=key)
         return
 
 
 def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
-    from carecall.voice_client import telnyx_command
     key = _required_keypress()
     matched = (digits == key)
 
     if call_type == 'reminder':
         from carecall.models import ReminderSession
         session = db.session.get(ReminderSession, session_id) if session_id else None
-        msg = "Thank you. Goodbye."
+        prompt_key = 'reminder_unsuccessful_closing'
         if log:
             log.keypress_received = digits
             if matched:
@@ -958,9 +943,9 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
                 if session:
                     session.status = 'acknowledged'
                     session.resolved_at = datetime.utcnow()
-                msg = "Thank you. Your reminder has been acknowledged. Have a great day."
+                prompt_key = 'success_goodbye'
             db.session.commit()
-        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        _telnyx_prompt_speak(ccid, prompt_key)
         return
 
     if call_type == 'wellness':
@@ -971,14 +956,14 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
                 log.status = 'acknowledged'
                 session.status = 'acknowledged'
                 session.resolved_at = datetime.utcnow()
-                msg = "Thank you. We have recorded your check-in. Take care."
+                prompt_key = 'success_goodbye'
             else:
                 log.status = 'wrong-keypress'
-                msg = "That was not the expected response. Goodbye."
+                prompt_key = 'wellness_unsuccessful_closing'
             db.session.commit()
         else:
-            msg = "Session not found. Goodbye."
-        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+            prompt_key = 'session_not_found_closing'
+        _telnyx_prompt_speak(ccid, prompt_key)
         return
 
     if call_type == 'emergency':
@@ -992,15 +977,14 @@ def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
                 session.acknowledged_by_contact_id = contact.id
                 session.status = 'escalated'
                 session.resolved_at = datetime.utcnow()
-                msg = (f"Thank you {contact.name}. Your acknowledgment has been recorded. "
-                       "Please follow up with the client as soon as possible.")
+                db.session.commit()
+                _telnyx_prompt_speak(ccid, 'emergency_ack_instruction', contact_name=contact.name)
             else:
                 log.status = 'wrong-keypress'
-                msg = "Incorrect key pressed. Goodbye."
-            db.session.commit()
+                db.session.commit()
+                _telnyx_prompt_speak(ccid, 'emergency_unsuccessful_closing')
         else:
-            msg = "Session not found. Goodbye."
-        _telnyx_safe_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+            _telnyx_prompt_speak(ccid, 'session_not_found_closing')
         return
 
 
@@ -1037,6 +1021,6 @@ def _telnyx_handle_hangup(call_type, session_id, log, contact_id, payload):
 @webhooks_bp.route('/test', methods=['POST'])
 def test_twiml():
     vr = VoiceResponse()
-    vr.say("CareCall test call successful. Your configuration is working correctly.", voice=_voice())
+    _twiml_prompt(vr, 'test_call_message')
     vr.hangup()
     return _xml(vr)

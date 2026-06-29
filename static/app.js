@@ -1610,6 +1610,199 @@ async function saveVoiceSetting() {
   }
 }
 
+// ── System prompts (global call messages, editable text or recording) ───────
+
+let _promptRecorders = {};  // key -> { mediaRecorder, micStream, blob, timerInterval }
+
+function _promptState(key) {
+  if (!_promptRecorders[key]) _promptRecorders[key] = {};
+  return _promptRecorders[key];
+}
+
+async function loadSystemPrompts() {
+  const container = document.getElementById('systemPromptsList');
+  try {
+    const prompts = await api('GET', '/prompts');
+    container.innerHTML = prompts.map(_renderPromptCard).join('');
+  } catch(e) {
+    container.innerHTML = `<span style="color:var(--red);font-size:.85rem">${esc(e.message)}</span>`;
+  }
+}
+
+function _renderPromptCard(p) {
+  const isRec = p.type === 'recording';
+  return `
+    <div class="settings-row" style="border:1px solid var(--border);border-radius:8px;padding:.85rem">
+      <strong style="font-size:.9rem">${esc(p.label)}</strong>
+      <div class="greeting-toggle" id="promptToggle_${p.key}" style="margin-top:.5rem">
+        <button class="greeting-mode-btn${isRec ? '' : ' active'}" id="promptModeScript_${p.key}"
+                onclick="setPromptMode('${p.key}','script')">Text</button>
+        <button class="greeting-mode-btn${isRec ? ' active' : ''}" id="promptModeRecording_${p.key}"
+                onclick="setPromptMode('${p.key}','recording')">Custom Recording</button>
+      </div>
+
+      <div id="promptScriptPanel_${p.key}" style="margin-top:.6rem;display:${isRec ? 'none' : ''}">
+        <textarea id="promptScriptText_${p.key}" rows="2"
+          style="width:100%;resize:vertical;font-size:.875rem;padding:.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit"
+        >${esc(p.script)}</textarea>
+        <div style="display:flex;gap:.6rem;margin-top:.4rem;align-items:center">
+          <button class="btn-primary btn-sm" onclick="savePromptScript('${p.key}')">Save</button>
+          <button class="btn-ghost btn-sm" data-default="${esc(p.default_script)}"
+                  onclick="resetPromptScript('${p.key}', this.dataset.default)">Reset to default</button>
+          <span id="promptScriptStatus_${p.key}" style="font-size:.82rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <div id="promptRecordingPanel_${p.key}" style="margin-top:.6rem;display:${isRec ? '' : 'none'}">
+        <div id="promptCurrentRecording_${p.key}">${_promptRecordingStatusHtml(p.key, p.has_recording)}</div>
+        <div class="greeting-recorder" style="margin-top:.5rem">
+          <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <button class="btn-primary btn-sm" id="promptRecordBtn_${p.key}" onclick="startPromptRecording('${p.key}')">⏺ Record</button>
+            <button class="btn-ghost btn-sm" id="promptStopBtn_${p.key}" style="display:none" onclick="stopPromptRecording('${p.key}')">⏹ Stop</button>
+            <span id="promptRecordTimer_${p.key}" style="display:none;font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--red);font-weight:600"></span>
+          </div>
+          <div id="promptRecordPreview_${p.key}" style="display:none;margin-top:.6rem">
+            <audio id="promptAudioPreview_${p.key}" controls style="width:100%;max-width:380px"></audio>
+            <div style="display:flex;gap:.6rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
+              <button class="btn-primary btn-sm" id="promptSaveBtn_${p.key}" onclick="savePromptRecording('${p.key}')">Save Recording</button>
+              <button class="btn-ghost btn-sm" onclick="discardPromptRecording('${p.key}')">Discard</button>
+              <span id="promptRecordStatus_${p.key}" style="font-size:.82rem;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _promptRecordingStatusHtml(key, hasRecording) {
+  if (hasRecording) {
+    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;background:#f0faf4;border:1px solid #b2e5c8;border-radius:6px;font-size:.85rem">
+      <span style="color:var(--green);font-weight:600">✓ Active custom recording</span>
+      <button class="btn-ghost btn-sm" style="color:var(--red);margin-left:auto" onclick="deletePromptRecording('${key}')">Remove</button>
+    </div>`;
+  }
+  return `<p style="color:var(--muted);font-size:.85rem;margin:0">No custom recording saved yet. Record one below.</p>`;
+}
+
+function setPromptMode(key, mode) {
+  api('POST', `/prompts/${key}`, { type: mode }).catch(() => {});
+  const isRec = mode === 'recording';
+  document.getElementById(`promptScriptPanel_${key}`).style.display    = isRec ? 'none' : '';
+  document.getElementById(`promptRecordingPanel_${key}`).style.display = isRec ? '' : 'none';
+  document.getElementById(`promptModeScript_${key}`).classList.toggle('active', !isRec);
+  document.getElementById(`promptModeRecording_${key}`).classList.toggle('active', isRec);
+}
+
+async function savePromptScript(key) {
+  const script = document.getElementById(`promptScriptText_${key}`).value.trim();
+  const statusEl = document.getElementById(`promptScriptStatus_${key}`);
+  try {
+    await api('POST', `/prompts/${key}`, { type: 'script', script });
+    statusEl.textContent = 'Saved.';
+    statusEl.style.color = 'var(--green)';
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  } catch(e) {
+    statusEl.textContent = e.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
+function resetPromptScript(key, defaultScript) {
+  document.getElementById(`promptScriptText_${key}`).value = defaultScript;
+  savePromptScript(key);
+}
+
+async function startPromptRecording(key) {
+  const st = _promptState(key);
+  if (st.mediaRecorder && st.mediaRecorder.state !== 'inactive') return;
+  try {
+    st.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    toast(e.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Could not access microphone: ' + e.message, 'error');
+    return;
+  }
+  const chunks = [];
+  const preferredTypes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4'];
+  const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  st.mediaRecorder = new MediaRecorder(st.micStream, mimeType ? { mimeType } : {});
+  st.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  st.mediaRecorder.onstop = () => {
+    st.blob = new Blob(chunks, { type: st.mediaRecorder.mimeType });
+    const url = URL.createObjectURL(st.blob);
+    if (st.micStream) { st.micStream.getTracks().forEach(t => t.stop()); st.micStream = null; }
+    document.getElementById(`promptAudioPreview_${key}`).src = url;
+    document.getElementById(`promptRecordPreview_${key}`).style.display = '';
+    document.getElementById(`promptRecordBtn_${key}`).style.display = '';
+    document.getElementById(`promptStopBtn_${key}`).style.display = 'none';
+    document.getElementById(`promptRecordTimer_${key}`).style.display = 'none';
+    clearInterval(st.timerInterval);
+  };
+  st.mediaRecorder.start(250);
+  const startTime = Date.now();
+  document.getElementById(`promptRecordBtn_${key}`).style.display = 'none';
+  document.getElementById(`promptStopBtn_${key}`).style.display = '';
+  document.getElementById(`promptRecordPreview_${key}`).style.display = 'none';
+  document.getElementById(`promptRecordTimer_${key}`).style.display = '';
+  st.timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    document.getElementById(`promptRecordTimer_${key}`).textContent =
+      String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+  }, 500);
+}
+
+function stopPromptRecording(key) {
+  const st = _promptState(key);
+  clearInterval(st.timerInterval);
+  if (st.mediaRecorder && st.mediaRecorder.state !== 'inactive') st.mediaRecorder.stop();
+  else if (st.micStream) { st.micStream.getTracks().forEach(t => t.stop()); st.micStream = null; }
+}
+
+async function savePromptRecording(key) {
+  const st = _promptState(key);
+  if (!st.blob) { toast('Nothing recorded yet.', 'error'); return; }
+  const btn = document.getElementById(`promptSaveBtn_${key}`);
+  const statusEl = document.getElementById(`promptRecordStatus_${key}`);
+  btn.disabled = true; btn.textContent = 'Converting…';
+  const fd = new FormData();
+  fd.append('audio', st.blob, 'prompt.webm');
+  try {
+    const res = await fetch(`/api/prompts/${key}/recording`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    st.blob = null;
+    document.getElementById(`promptRecordPreview_${key}`).style.display = 'none';
+    document.getElementById(`promptAudioPreview_${key}`).src = '';
+    document.getElementById(`promptCurrentRecording_${key}`).innerHTML = _promptRecordingStatusHtml(key, true);
+    setPromptMode(key, 'recording');
+    toast('Recording saved.', 'success');
+  } catch(e) {
+    statusEl.textContent = e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Recording';
+  }
+}
+
+function discardPromptRecording(key) {
+  const st = _promptState(key);
+  st.blob = null;
+  const preview = document.getElementById(`promptAudioPreview_${key}`);
+  URL.revokeObjectURL(preview.src);
+  preview.src = '';
+  document.getElementById(`promptRecordPreview_${key}`).style.display = 'none';
+  document.getElementById(`promptRecordBtn_${key}`).style.display = '';
+}
+
+async function deletePromptRecording(key) {
+  if (!confirm('Remove the custom recording and revert to text?')) return;
+  try {
+    await api('DELETE', `/prompts/${key}/recording`);
+    document.getElementById(`promptCurrentRecording_${key}`).innerHTML = _promptRecordingStatusHtml(key, false);
+    setPromptMode(key, 'script');
+    toast('Custom recording removed.');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
 // ── Inbound greeting configurator ────────────────────────────────────────────
 
 let _greetingRecordedBlob = null;
@@ -1759,6 +1952,7 @@ let _allMessages = [];
 
 async function loadMessages() {
   loadGreeting();
+  loadSystemPrompts();
   try {
     _allMessages = await api('GET', '/inbound-messages');
     renderMessages();

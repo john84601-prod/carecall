@@ -891,15 +891,10 @@ def save_inbound_greeting():
     return jsonify({'success': True})
 
 
-@api_bp.route('/inbound-greeting/recording', methods=['POST'])
-def upload_inbound_greeting_recording():
-    """Accept a browser-recorded blob, convert to MP3, save as the inbound greeting."""
+def _convert_recorded_audio_to_mp3(audio_file, output_path):
+    """Convert a browser-recorded audio blob (webm/ogg/etc.) to MP3 via ffmpeg.
+    Returns an error message string on failure, or None on success."""
     import subprocess, tempfile
-    if 'audio' not in request.files:
-        return jsonify({'error': 'No audio data received'}), 400
-    audio_file  = request.files['audio']
-    upload_folder = current_app.config['UPLOAD_FOLDER']
-    output_path = os.path.join(upload_folder, _INBOUND_GREETING_FILE)
     with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as tmp:
         audio_file.save(tmp.name)
         tmp_path = tmp.name
@@ -910,15 +905,28 @@ def upload_inbound_greeting_recording():
             capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0:
-            current_app.logger.error(f"ffmpeg greeting: {result.stderr}")
-            return jsonify({'error': 'Audio conversion failed. Is ffmpeg installed?'}), 500
+            current_app.logger.error(f"ffmpeg conversion: {result.stderr}")
+            return 'Audio conversion failed. Is ffmpeg installed?'
     except FileNotFoundError:
-        return jsonify({'error': 'ffmpeg is not installed. Run: sudo apt-get install ffmpeg'}), 500
+        return 'ffmpeg is not installed. Run: sudo apt-get install ffmpeg'
     except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Conversion timed out'}), 500
+        return 'Conversion timed out'
     finally:
         try: os.unlink(tmp_path)
         except OSError: pass
+    return None
+
+
+@api_bp.route('/inbound-greeting/recording', methods=['POST'])
+def upload_inbound_greeting_recording():
+    """Accept a browser-recorded blob, convert to MP3, save as the inbound greeting."""
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio data received'}), 400
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    output_path = os.path.join(upload_folder, _INBOUND_GREETING_FILE)
+    error = _convert_recorded_audio_to_mp3(request.files['audio'], output_path)
+    if error:
+        return jsonify({'error': error}), 500
     # Switch config to use recording
     cfg = _load_system_config()
     cfg['inbound_greeting_type'] = 'recording'
@@ -936,6 +944,80 @@ def delete_inbound_greeting_recording():
         pass
     cfg = _load_system_config()
     cfg['inbound_greeting_type'] = 'script'
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+# ── System prompts (global TTS messages, editable text or custom recording) ───
+
+@api_bp.route('/prompts', methods=['GET'])
+def list_prompts():
+    from carecall.prompts import PROMPT_KEYS, PROMPT_LABELS, PROMPT_DEFAULTS, prompt_recording_filename
+    cfg = _load_system_config()
+    prompts_cfg = cfg.get('prompts', {})
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    out = []
+    for key in PROMPT_KEYS:
+        entry = prompts_cfg.get(key, {})
+        has_recording = os.path.isfile(os.path.join(upload_folder, prompt_recording_filename(key)))
+        out.append({
+            'key':            key,
+            'label':          PROMPT_LABELS.get(key, key),
+            'type':           entry.get('type', 'script'),
+            'script':         entry.get('script') or PROMPT_DEFAULTS[key],
+            'default_script': PROMPT_DEFAULTS[key],
+            'has_recording':  has_recording,
+        })
+    return jsonify(out)
+
+
+@api_bp.route('/prompts/<key>', methods=['POST'])
+def save_prompt(key):
+    from carecall.prompts import PROMPT_DEFAULTS
+    if key not in PROMPT_DEFAULTS:
+        return jsonify({'error': 'Unknown prompt key'}), 404
+    data = request.get_json() or {}
+    cfg = _load_system_config()
+    prompts_cfg = cfg.setdefault('prompts', {})
+    entry = prompts_cfg.setdefault(key, {})
+    if 'type' in data:
+        entry['type'] = 'recording' if data['type'] == 'recording' else 'script'
+    if 'script' in data:
+        entry['script'] = str(data['script']).strip() or PROMPT_DEFAULTS[key]
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+@api_bp.route('/prompts/<key>/recording', methods=['POST'])
+def upload_prompt_recording(key):
+    from carecall.prompts import PROMPT_DEFAULTS, prompt_recording_filename
+    if key not in PROMPT_DEFAULTS:
+        return jsonify({'error': 'Unknown prompt key'}), 404
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio data received'}), 400
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    output_path = os.path.join(upload_folder, prompt_recording_filename(key))
+    error = _convert_recorded_audio_to_mp3(request.files['audio'], output_path)
+    if error:
+        return jsonify({'error': error}), 500
+    cfg = _load_system_config()
+    cfg.setdefault('prompts', {}).setdefault(key, {})['type'] = 'recording'
+    _save_system_config(cfg)
+    return jsonify({'success': True})
+
+
+@api_bp.route('/prompts/<key>/recording', methods=['DELETE'])
+def delete_prompt_recording(key):
+    from carecall.prompts import PROMPT_DEFAULTS, prompt_recording_filename
+    if key not in PROMPT_DEFAULTS:
+        return jsonify({'error': 'Unknown prompt key'}), 404
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    try:
+        os.unlink(os.path.join(upload_folder, prompt_recording_filename(key)))
+    except OSError:
+        pass
+    cfg = _load_system_config()
+    cfg.setdefault('prompts', {}).setdefault(key, {})['type'] = 'script'
     _save_system_config(cfg)
     return jsonify({'success': True})
 
