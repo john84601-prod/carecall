@@ -1092,13 +1092,18 @@ def proxy_inbound_audio(msg_id):
     # SignalWire inbound recordings give us a direct file URL (no Twilio-style
     # REST lookup exists for them); Twilio recordings need the REST URL built
     # from the SID.
+    from carecall.voice_client import get_provider_name
     if msg.recording_url:
         url = msg.recording_url
         mimetype = 'audio/wav' if url.lower().endswith('.wav') else 'audio/mpeg'
     else:
         url = get_recording_audio_url(msg.recording_sid)
         mimetype = 'audio/mpeg'
-    auth = get_recording_audio_auth()
+    # Telnyx's recording_url is an S3 pre-signed link with its own auth baked
+    # into the query string — sending Basic Auth credentials on top of that
+    # makes S3 reject the request with a 400. SignalWire's RecordingUrl, by
+    # contrast, does need those credentials.
+    auth = None if get_provider_name() == 'telnyx' else get_recording_audio_auth()
     try:
         r = _req.get(url, auth=auth, timeout=30)
         if r.status_code != 200:

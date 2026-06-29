@@ -1030,10 +1030,24 @@ def _telnyx_handle_hangup(call_type, session_id, log, contact_id, payload):
 # Sequence: call.initiated -> answer -> call.answered -> speak/play greeting
 # -> call.speak.ended/call.playback.ended -> record_start -> caller leaves a
 # message -> call.recording.saved -> save it + speak a thank-you -> that
-# speak's own call.speak.ended -> hangup. client_state tags the greeting
-# command so its speak.ended is told apart from the thank-you message's.
+# speak's own call.speak.ended -> hangup.
+#
+# client_state carries a "tag|caller_number" string (base64, Telnyx's
+# requirement) through this whole chain — the tag distinguishes which step a
+# given speak.ended/playback.ended event belongs to (greeting vs. thank-you),
+# and the caller's number rides along since call.recording.saved itself
+# doesn't include a `from` field the way call.answered does.
 
-_INBOUND_GREETING_STATE = base64.b64encode(b'inbound_greeting').decode()
+def _telnyx_state_encode(tag, from_number=''):
+    return base64.b64encode(f"{tag}|{from_number}".encode()).decode()
+
+
+def _telnyx_state_decode(client_state):
+    try:
+        tag, _, from_number = base64.b64decode(client_state or '').decode().partition('|')
+        return tag, from_number
+    except Exception:
+        return '', ''
 
 
 def _telnyx_inbound_events(event_type, ccid, p):
@@ -1045,31 +1059,35 @@ def _telnyx_inbound_events(event_type, ccid, p):
         from flask import current_app
         from carecall.routes.api import _load_system_config, _INBOUND_GREETING_FILE
 
+        from_number     = p.get('from', '')
         cfg             = _load_system_config()
         greeting_type   = cfg.get('inbound_greeting_type', 'script')
         greeting_script = cfg.get('inbound_greeting_script',
                                    "You have reached CareCall. "
                                    "Please leave a message after the tone and we will follow up with you.")
         greeting_path   = os.path.join(current_app.config['UPLOAD_FOLDER'], _INBOUND_GREETING_FILE)
+        state           = _telnyx_state_encode('inbound_greeting', from_number)
 
         if greeting_type == 'recording' and os.path.isfile(greeting_path):
             _telnyx_safe_command(ccid, 'playback_start', {
                 'audio_url': f"{_public_url()}/uploads/{_INBOUND_GREETING_FILE}",
-                'client_state': _INBOUND_GREETING_STATE,
+                'client_state': state,
             })
         else:
             _telnyx_safe_command(ccid, 'speak', {
                 'payload': greeting_script, 'voice': _voice(), 'language': 'en-US',
-                'client_state': _INBOUND_GREETING_STATE,
+                'client_state': state,
             })
         return '', 200
 
     if event_type in ('call.speak.ended', 'call.playback.ended'):
-        if p.get('client_state') == _INBOUND_GREETING_STATE:
+        tag, from_number = _telnyx_state_decode(p.get('client_state'))
+        if tag == 'inbound_greeting':
             # Greeting just finished — start recording the caller's message.
             _telnyx_safe_command(ccid, 'record_start', {
                 'format': 'mp3', 'channels': 'single',
                 'play_beep': True, 'max_length': 120, 'timeout_secs': 5,
+                'client_state': _telnyx_state_encode('inbound_recording', from_number),
             })
         else:
             # This was the post-recording thank-you message finishing.
@@ -1077,7 +1095,8 @@ def _telnyx_inbound_events(event_type, ccid, p):
         return '', 200
 
     if event_type == 'call.recording.saved':
-        _telnyx_save_inbound_recording(ccid, p)
+        _, from_number = _telnyx_state_decode(p.get('client_state'))
+        _telnyx_save_inbound_recording(ccid, p, from_number)
         return '', 200
 
     if event_type == 'call.hangup':
@@ -1086,12 +1105,11 @@ def _telnyx_inbound_events(event_type, ccid, p):
     return '', 200
 
 
-def _telnyx_save_inbound_recording(ccid, p):
+def _telnyx_save_inbound_recording(ccid, p, from_number):
     from carecall.models import InboundMessage, Client
 
     recording_id  = p.get('recording_id', '')
     recording_url = (p.get('recording_urls') or {}).get('mp3', '')
-    from_number   = p.get('from', '')
     started       = p.get('recording_started_at')
     ended         = p.get('recording_ended_at')
 
