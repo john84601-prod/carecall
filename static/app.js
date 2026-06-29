@@ -149,7 +149,7 @@ function setupTabs() {
         case 'audio':     loadAudio();     break;
         case 'messages':    loadMessages();    break;
         case 'recordings':  loadRecordings();  break;
-        case 'settings':    loadSettings();    break;
+        case 'settings':    loadSettings(); loadSystemPrompts(); break;
       }
     });
   });
@@ -1619,11 +1619,26 @@ function _promptState(key) {
   return _promptRecorders[key];
 }
 
+const _PROMPT_GROUPS = [
+  { title: 'Reminder Calls',    keys: ['reminder_message', 'reminder_unsuccessful_closing'] },
+  { title: 'Wellness Checks',   keys: ['wellness_message', 'wellness_voicemail_message', 'wellness_unsuccessful_closing'] },
+  { title: 'Emergency Contacts', keys: ['emergency_message', 'emergency_voicemail_message', 'emergency_ack_instruction', 'emergency_unsuccessful_closing'] },
+  { title: 'Inbound Voicemail', keys: ['inbound_no_recording_closing', 'inbound_thanks_closing'] },
+  { title: 'General',          keys: ['success_goodbye', 'session_not_found_closing', 'test_call_message'] },
+];
+
 async function loadSystemPrompts() {
   const container = document.getElementById('systemPromptsList');
   try {
     const prompts = await api('GET', '/prompts');
-    container.innerHTML = prompts.map(_renderPromptCard).join('');
+    const byKey = Object.fromEntries(prompts.map(p => [p.key, p]));
+    container.innerHTML = _PROMPT_GROUPS.map(group => `
+      <div style="margin-bottom:1.5rem">
+        <h3 style="margin-bottom:.6rem">${esc(group.title)}</h3>
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          ${group.keys.filter(k => byKey[k]).map(k => _renderPromptCard(byKey[k])).join('')}
+        </div>
+      </div>`).join('');
   } catch(e) {
     container.innerHTML = `<span style="color:var(--red);font-size:.85rem">${esc(e.message)}</span>`;
   }
@@ -1952,7 +1967,6 @@ let _allMessages = [];
 
 async function loadMessages() {
   loadGreeting();
-  loadSystemPrompts();
   try {
     _allMessages = await api('GET', '/inbound-messages');
     renderMessages();

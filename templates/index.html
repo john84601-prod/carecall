@@ -541,6 +541,19 @@
         </div>
       </details>
 
+      <!-- ══ Call Messages ═══════════════════════════════════════════ -->
+      <details class="settings-section">
+        <summary>Call Messages</summary>
+        <div class="settings-section-body">
+          <p>What's said during reminder, wellness, and emergency calls. Each message can be left as text
+             (read aloud by the configured voice) or replaced with your own recording — applies to every
+             client unless that client's schedule has its own uploaded message.</p>
+          <div id="systemPromptsList">
+            <span style="color:var(--muted);font-size:.85rem">Loading…</span>
+          </div>
+        </div>
+      </details>
+
       <!-- ══ Troubleshooting ═════════════════════════════════════════ -->
       <details class="settings-section">
         <summary>Troubleshooting</summary>
@@ -727,17 +740,8 @@
   <section id="tab-messages" class="tab">
     <div class="settings-panel">
 
-      <!-- ── System prompts ─────────────────────────────────────────── -->
-      <h2>Call Messages</h2>
-      <p>What's said during reminder, wellness, and emergency calls. Each message can be left as text
-         (read aloud by the configured voice) or replaced with your own recording — applies to every
-         client unless that client's schedule has its own uploaded message.</p>
-      <div id="systemPromptsList" style="display:flex;flex-direction:column;gap:1rem;margin-bottom:2rem">
-        <span style="color:var(--muted);font-size:.85rem">Loading…</span>
-      </div>
-
       <!-- ── Greeting configurator ──────────────────────────────────── -->
-      <h2 style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">Caller Greeting</h2>
+      <h2>Caller Greeting</h2>
       <p>What callers hear when they dial your CareCall number.</p>
 
       <div class="greeting-toggle" id="greetingToggle">
