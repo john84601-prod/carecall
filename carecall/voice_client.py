@@ -1,14 +1,35 @@
 import os
 import re
+import time
 import logging
+import threading
 
 import requests
 
 logger = logging.getLogger(__name__)
 
+_call_throttle_lock = threading.Lock()
+_last_call_time = 0.0
+
 
 def get_provider_name():
     return os.getenv('VOICE_PROVIDER', 'twilio').strip().lower()
+
+
+def _throttle_outbound_call():
+    """Enforce a minimum gap between outbound calls account-wide, as a
+    safety net against the voice provider's outbound call rate limit
+    (observed on SignalWire: "Exceeded Outbound Call Rate" even on calls
+    that weren't obviously back-to-back from this app's perspective).
+    Override with MIN_CALL_SPACING_SECONDS in .env if needed.
+    """
+    global _last_call_time
+    min_gap = float(os.getenv('MIN_CALL_SPACING_SECONDS', '2'))
+    with _call_throttle_lock:
+        wait = min_gap - (time.monotonic() - _last_call_time)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_time = time.monotonic()
 
 
 # ── SignalWire: thin REST client over `requests` ───────────────────────────────
@@ -338,6 +359,7 @@ def make_call(to_number, answer_url, status_callback_url,
                 params['async_amd_status_callback']        = amd_status_callback_url
                 params['async_amd_status_callback_method'] = 'POST'
 
+    _throttle_outbound_call()
     call = client.calls.create(**params)
     logger.info(f"Call initiated to {to_number} via {provider} — SID: {call.sid}")
     return call.sid
