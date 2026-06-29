@@ -694,6 +694,292 @@ def inbound_recording():
     return _xml(vr)
 
 
+# ── Telnyx Call Control event dispatcher ───────────────────────────────────────
+#
+# Telnyx delivers every event for a call (answered, AMD result, DTMF gather
+# result, hangup, ...) as JSON POSTs to one webhook_url, set per-call in
+# voice_client._telnyx_make_call(). That function rewrites whatever
+# answer_url path scheduler.py built (e.g. /webhook/wellness-answer) into
+# this single /telnyx route with call_type=wellness|reminder|emergency added
+# to the query string, so the same session_id/log_id/contact_id params used
+# by the TwiML routes above are preserved here.
+
+@webhooks_bp.route('/telnyx', methods=['POST'])
+def telnyx_events():
+    from carecall.voice_client import telnyx_command
+
+    body       = request.get_json(silent=True) or {}
+    data       = body.get('data', {})
+    event_type = data.get('event_type', '')
+    p          = data.get('payload', {})
+    ccid       = p.get('call_control_id', '')
+
+    call_type  = request.args.get('call_type', '')
+    session_id = request.args.get('session_id', type=int)
+    log_id     = request.args.get('log_id',     type=int)
+    contact_id = request.args.get('contact_id', type=int)
+
+    log = db.session.get(CallLog, log_id) if log_id else None
+
+    if event_type == 'call.initiated':
+        return '', 200
+
+    if event_type == 'call.answered':
+        if call_type in ('reminder', 'wellness', 'emergency'):
+            # These call types always request AMD (see scheduler.py) — wait for
+            # the AMD result event before speaking/gathering, mirroring this
+            # app's synchronous-AMD handling on SignalWire/Twilio-sync.
+            return '', 200
+        # No AMD requested for this call (e.g. /test-call) — nothing else will
+        # fire to prompt a response, so speak immediately.
+        telnyx_command(ccid, 'speak', {
+            'payload': "CareCall test call successful. Your configuration is working correctly.",
+            'voice': _voice(), 'language': 'en-US',
+        })
+        return '', 200
+
+    if event_type in ('call.machine.premium.detection.ended', 'call.machine.detection.ended'):
+        is_machine = p.get('result', 'human') in ('machine', 'fax')
+        if is_machine:
+            _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id)
+        else:
+            _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id)
+        return '', 200
+
+    if event_type == 'call.gather.ended':
+        digits = p.get('digits', '') or ''
+        _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits)
+        return '', 200
+
+    if event_type in ('call.speak.ended', 'call.playback.ended'):
+        try:
+            telnyx_command(ccid, 'hangup')
+        except Exception as e:
+            logger.warning(f"Telnyx hangup after speak/playback failed (call likely already ended): {e}")
+        return '', 200
+
+    if event_type == 'call.hangup':
+        _telnyx_handle_hangup(call_type, session_id, log, contact_id, p)
+        return '', 200
+
+    return '', 200
+
+
+def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
+    from carecall.voice_client import telnyx_command
+
+    if call_type == 'reminder':
+        from carecall.models import ReminderSession
+        session = db.session.get(ReminderSession, session_id) if session_id else None
+        if log:
+            log.status = 'left_voicemail'
+            if session and session.status == 'calling':
+                session.status = 'left_voicemail'
+                session.resolved_at = datetime.utcnow()
+            db.session.commit()
+        schedule = log.schedule if log else None
+        if schedule and schedule.mp3_filename:
+            telnyx_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+        else:
+            telnyx_command(ccid, 'speak', {
+                'payload': "This is your scheduled reminder. Have a great day.",
+                'voice': _voice(), 'language': 'en-US',
+            })
+        return
+
+    if call_type == 'wellness':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        if log:
+            log.status = 'left_voicemail'
+            db.session.commit()
+        if session:
+            client, schedule, key = session.client, session.schedule, _required_keypress()
+            if schedule.mp3_filename:
+                telnyx_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+            else:
+                telnyx_command(ccid, 'speak', {
+                    'payload': (f"Hello {client.first_name}, this is a wellness check call. "
+                                f"We were unable to reach you. Please call back or press {key} "
+                                "when we try again to confirm you are okay."),
+                    'voice': _voice(), 'language': 'en-US',
+                })
+        else:
+            telnyx_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
+                                            'voice': _voice(), 'language': 'en-US'})
+        return
+
+    if call_type == 'emergency':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        contact = db.session.get(EmergencyContact, contact_id) if contact_id else None
+        if log:
+            log.status = 'left_voicemail'
+            db.session.commit()
+        if session and contact:
+            telnyx_command(ccid, 'speak', {
+                'payload': (f"Urgent message for {contact.name}. {session.client.full_name} has not "
+                            f"responded to {session.current_attempt} wellness check calls. "
+                            "Please check on them as soon as possible."),
+                'voice': _voice(), 'language': 'en-US',
+            })
+        else:
+            telnyx_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
+                                            'voice': _voice(), 'language': 'en-US'})
+        return
+
+
+def _telnyx_speak_gather(call_type, ccid, session_id, log, contact_id):
+    from carecall.voice_client import telnyx_command
+
+    if call_type == 'reminder':
+        from carecall.models import ReminderSession
+        session = db.session.get(ReminderSession, session_id) if session_id else None
+        if log:
+            log.status = 'reached_human'
+            db.session.commit()
+        schedule = log.schedule if log else None
+        gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
+        if schedule and schedule.mp3_filename:
+            gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
+            telnyx_command(ccid, 'gather_using_audio', gp)
+        else:
+            gp.update(payload="This is your scheduled reminder. Have a great day.",
+                      voice=_voice(), language='en-US')
+            telnyx_command(ccid, 'gather_using_speak', gp)
+        return
+
+    if call_type == 'wellness':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        if log:
+            log.status = 'answered'
+            db.session.commit()
+        if not session:
+            telnyx_command(ccid, 'speak', {'payload': "Wellness check call. Session not found. Goodbye.",
+                                            'voice': _voice(), 'language': 'en-US'})
+            return
+        client, schedule, key = session.client, session.schedule, _required_keypress()
+        gp = {'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 10000, 'valid_digits': '0123456789'}
+        if schedule.mp3_filename:
+            gp['audio_url'] = f"{_public_url()}/uploads/{schedule.mp3_filename}"
+            telnyx_command(ccid, 'gather_using_audio', gp)
+        else:
+            gp.update(
+                payload=f"Hello {client.first_name}, this is your wellness check call. Please press {key} to confirm you are okay.",
+                voice=_voice(), language='en-US',
+            )
+            telnyx_command(ccid, 'gather_using_speak', gp)
+        return
+
+    if call_type == 'emergency':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        contact = db.session.get(EmergencyContact, contact_id) if contact_id else None
+        if log:
+            log.status = 'answered'
+            db.session.commit()
+        if not (session and contact):
+            telnyx_command(ccid, 'speak', {'payload': "Emergency wellness notification. Session not found. Goodbye.",
+                                            'voice': _voice(), 'language': 'en-US'})
+            return
+        key = _required_keypress()
+        telnyx_command(ccid, 'gather_using_speak', {
+            'payload': (f"This is an urgent wellness notification. {session.client.full_name} has not responded to "
+                        f"{session.current_attempt} wellness check calls. As their emergency contact, please press {key} "
+                        "to confirm you will follow up with them immediately."),
+            'voice': _voice(), 'language': 'en-US',
+            'minimum_digits': 1, 'maximum_digits': 1, 'timeout_millis': 20000, 'valid_digits': '0123456789',
+        })
+        return
+
+
+def _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits):
+    from carecall.voice_client import telnyx_command
+    key = _required_keypress()
+    matched = (digits == key)
+
+    if call_type == 'reminder':
+        from carecall.models import ReminderSession
+        session = db.session.get(ReminderSession, session_id) if session_id else None
+        msg = "Thank you. Goodbye."
+        if log:
+            log.keypress_received = digits
+            if matched:
+                log.status = 'acknowledged'
+                if session:
+                    session.status = 'acknowledged'
+                    session.resolved_at = datetime.utcnow()
+                msg = "Thank you. Your reminder has been acknowledged. Have a great day."
+            db.session.commit()
+        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        return
+
+    if call_type == 'wellness':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        if session and log:
+            log.keypress_received = digits
+            if matched:
+                log.status = 'acknowledged'
+                session.status = 'acknowledged'
+                session.resolved_at = datetime.utcnow()
+                msg = "Thank you. We have recorded your check-in. Take care."
+            else:
+                log.status = 'wrong-keypress'
+                msg = "That was not the expected response. Goodbye."
+            db.session.commit()
+        else:
+            msg = "Session not found. Goodbye."
+        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        return
+
+    if call_type == 'emergency':
+        session = db.session.get(WellnessSession, session_id) if session_id else None
+        contact = db.session.get(EmergencyContact, contact_id) if contact_id else None
+        if session and log and contact:
+            log.keypress_received = digits
+            if matched:
+                log.status = 'acknowledged'
+                session.emergency_acknowledged = True
+                session.acknowledged_by_contact_id = contact.id
+                session.status = 'escalated'
+                session.resolved_at = datetime.utcnow()
+                msg = (f"Thank you {contact.name}. Your acknowledgment has been recorded. "
+                       "Please follow up with the client as soon as possible.")
+            else:
+                log.status = 'wrong-keypress'
+                msg = "Incorrect key pressed. Goodbye."
+            db.session.commit()
+        else:
+            msg = "Session not found. Goodbye."
+        telnyx_command(ccid, 'speak', {'payload': msg, 'voice': _voice(), 'language': 'en-US'})
+        return
+
+
+def _telnyx_handle_hangup(call_type, session_id, log, contact_id, payload):
+    """Mirrors call_status() above, but triggered by Telnyx's call.hangup event
+    instead of a Twilio/SignalWire-style status callback."""
+    from carecall.scheduler import (
+        handle_reminder_no_response, handle_wellness_no_response, handle_emergency_no_response,
+    )
+
+    if log and log.status in ('initiated', 'answered'):
+        log.status = payload.get('hangup_cause') or 'completed'
+        db.session.commit()
+
+    if call_type == 'reminder' and session_id:
+        from carecall.models import ReminderSession
+        r_session = db.session.get(ReminderSession, session_id)
+        if r_session and r_session.status == 'calling':
+            Thread(target=handle_reminder_no_response, args=(session_id,), daemon=True).start()
+
+    elif call_type == 'wellness' and session_id:
+        session = db.session.get(WellnessSession, session_id)
+        if session and session.status not in ('acknowledged', 'escalating', 'escalated', 'failed', 'cancelled'):
+            Thread(target=handle_wellness_no_response, args=(session_id,), daemon=True).start()
+
+    elif call_type == 'emergency' and session_id:
+        session = db.session.get(WellnessSession, session_id)
+        if session and not session.emergency_acknowledged and session.status != 'cancelled':
+            Thread(target=handle_emergency_no_response, args=(session_id, contact_id), daemon=True).start()
+
+
 # ── Test TwiML endpoint ────────────────────────────────────────────────────────
 
 @webhooks_bp.route('/test', methods=['POST'])

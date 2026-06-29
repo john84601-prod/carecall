@@ -3,6 +3,7 @@ import re
 import time
 import logging
 import threading
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 _call_throttle_lock = threading.Lock()
 _last_call_time = 0.0
+_telnyx_record_warned = False
 
 
 def get_provider_name():
@@ -209,6 +211,105 @@ def _patch_calls_accessor(client):
     return client
 
 
+# ── Telnyx: Call Control API (JSON/event-driven, not TwiML) ────────────────────
+#
+# Telnyx's Call Control API is fundamentally different from Twilio/SignalWire's
+# TwiML model: instead of returning an XML document describing what to do,
+# you place a call, then react to webhook *events* (call.answered,
+# call.machine.premium.detection.ended, call.gather.ended, call.hangup, ...)
+# by issuing one-off commands (speak, gather_using_speak, playback_start,
+# hangup) against the call's call_control_id. See routes/webhooks.py's
+# `/telnyx` route for the event dispatcher built around this.
+
+TELNYX_API_BASE = 'https://api.telnyx.com/v2'
+
+
+def _telnyx_headers():
+    key = os.getenv('TELNYX_API_KEY', '').strip()
+    if not key:
+        raise RuntimeError("TELNYX_API_KEY must be set in .env")
+    return {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
+
+
+def _telnyx_request(method, path, json=None):
+    r = requests.request(method, f"{TELNYX_API_BASE}{path}",
+                          headers=_telnyx_headers(), json=json, timeout=30)
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        detail = r.text
+        try:
+            detail = r.json()
+        except ValueError:
+            pass
+        raise requests.HTTPError(f"{e} — response body: {detail}", response=r) from None
+    return r.json() if r.content else {}
+
+
+def telnyx_command(call_control_id, action, payload=None):
+    """Issue a Call Control command (speak, gather_using_speak, gather_using_audio,
+    playback_start, hangup, ...) against a live call."""
+    return _telnyx_request('POST', f'/calls/{call_control_id}/actions/{action}', json=payload or {})
+
+
+def _telnyx_make_call(to_number, answer_url, machine_detection, record):
+    """Place an outbound call via Telnyx Call Control.
+
+    answer_url is the TwiML-style path/query this codebase already builds for
+    Twilio/SignalWire (e.g. ".../webhook/wellness-answer?session_id=1&log_id=2").
+    Its path tells us which flow (reminder/wellness/emergency) this call
+    belongs to; the query string (session_id/log_id/contact_id) is reused
+    as-is. Telnyx delivers ALL events for a call to one webhook_url, so we
+    rebuild the URL to point at the single /webhook/telnyx dispatcher with
+    call_type added.
+    """
+    global _telnyx_record_warned
+    if record and not _telnyx_record_warned:
+        logger.warning("Call recording is not yet implemented for the Telnyx provider — ignoring record=True")
+        _telnyx_record_warned = True
+
+    parts = urlsplit(answer_url)
+    if 'reminder' in parts.path:
+        call_type = 'reminder'
+    elif 'wellness' in parts.path:
+        call_type = 'wellness'
+    elif 'emergency' in parts.path:
+        call_type = 'emergency'
+    else:
+        call_type = 'test'
+
+    query = f"call_type={call_type}"
+    if parts.query:
+        query += f"&{parts.query}"
+    webhook_url = urlunsplit((parts.scheme, parts.netloc, '/webhook/telnyx', query, ''))
+
+    connection_id = os.getenv('TELNYX_CONNECTION_ID', '').strip()
+    if not connection_id:
+        raise RuntimeError("TELNYX_CONNECTION_ID must be set in .env")
+
+    payload = {
+        'connection_id': connection_id,
+        'to': to_number,
+        'from': get_from_number(),
+        'webhook_url': webhook_url,
+    }
+    if machine_detection:
+        payload['answering_machine_detection'] = 'premium'
+
+    _throttle_outbound_call()
+    data = _telnyx_request('POST', '/calls', json=payload)
+    return data['data']['call_control_id']
+
+
+def _telnyx_send_sms(to_number, body):
+    payload = {'to': to_number, 'from': get_from_number(), 'text': body}
+    profile_id = os.getenv('TELNYX_MESSAGING_PROFILE_ID', '').strip()
+    if profile_id:
+        payload['messaging_profile_id'] = profile_id
+    data = _telnyx_request('POST', '/messages', json=payload)
+    return data['data']['id']
+
+
 def get_client():
     """Return a REST client for the configured provider."""
     provider = get_provider_name()
@@ -223,6 +324,13 @@ def get_client():
             )
         return _patch_calls_accessor(SignalWireClient(project_id, token, space_url))
 
+    if provider == 'telnyx':
+        raise RuntimeError(
+            "get_client() is not supported for the Telnyx provider — its REST API "
+            "shape is too different from the Twilio SDK. Use make_call()/send_sms() "
+            "or telnyx_command() directly instead."
+        )
+
     from twilio.rest import Client
     sid   = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
     token = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
@@ -235,7 +343,8 @@ def get_client():
 
 def get_from_number():
     provider = get_provider_name()
-    key = 'SIGNALWIRE_FROM_NUMBER' if provider == 'signalwire' else 'TWILIO_FROM_NUMBER'
+    key_map = {'signalwire': 'SIGNALWIRE_FROM_NUMBER', 'telnyx': 'TELNYX_FROM_NUMBER'}
+    key = key_map.get(provider, 'TWILIO_FROM_NUMBER')
     num = os.getenv(key, '').strip()
     if not num:
         raise RuntimeError(f"{key} must be set in .env")
@@ -274,6 +383,11 @@ def get_recording_audio_auth():
 
 def send_sms(to_number, body):
     """Send an outbound SMS. Returns the provider's message SID."""
+    if get_provider_name() == 'telnyx':
+        msg_id = _telnyx_send_sms(to_number, body)
+        logger.info(f"SMS sent to {to_number} — SID: {msg_id}")
+        return msg_id
+
     client = get_client()
     msg = client.messages.create(
         to=to_number,
@@ -287,7 +401,18 @@ def send_sms(to_number, body):
 def register_sms_webhook(sms_url):
     """Update the provider phone number's inbound SMS webhook to sms_url.
     Called at startup so the dynamic ngrok/public URL is always current.
+
+    Telnyx routes inbound SMS at the Messaging Profile level (shared across
+    numbers), not per-number via a REST call like Twilio/SignalWire — this
+    has to be set once, by hand, in the Telnyx portal.
     """
+    if get_provider_name() == 'telnyx':
+        logger.info(
+            "Telnyx: inbound SMS routing is not auto-registered — set it once in "
+            "the portal under Messaging -> Messaging Profiles -> (your profile) -> "
+            f"Inbound -> Webhook URL = {sms_url}"
+        )
+        return
     try:
         client     = get_client()
         from_num   = get_from_number()
@@ -318,8 +443,18 @@ def make_call(to_number, answer_url, status_callback_url,
     always synchronous (the answer webhook is held until AMD resolves), so
     amd_status_callback_url is ignored on that provider and a warning is
     logged once per call so this difference isn't silently invisible.
+
+    Telnyx is handled separately via _telnyx_make_call(): its Call Control
+    API has no TwiML/status-callback concept, so status_callback_url and
+    amd_status_callback_url are ignored there — all events (including AMD
+    results) arrive on the single /webhook/telnyx dispatcher instead.
     """
     provider = get_provider_name()
+    if provider == 'telnyx':
+        sid = _telnyx_make_call(to_number, answer_url, machine_detection, record)
+        logger.info(f"Call initiated to {to_number} via telnyx — call_control_id: {sid}")
+        return sid
+
     client = get_client()
     # SignalWire's Compatibility API only accepts initiated/ringing/answered/
     # completed as event names (no no-answer/busy/failed). A single
@@ -371,6 +506,34 @@ def validate_webhook_signature(request):
     credentials), False if the signature is present and invalid.
     """
     provider = get_provider_name()
+
+    if provider == 'telnyx':
+        # Telnyx webhooks are JSON, signed with Ed25519 over "{timestamp}|{raw_body}",
+        # verified against the account's Public Key (NOT the API key) from the
+        # portal — a completely different scheme from Twilio/SignalWire's
+        # form-encoded HMAC signatures.
+        public_key = os.getenv('TELNYX_PUBLIC_KEY', '').strip()
+        if not public_key:
+            logger.warning('TELNYX_PUBLIC_KEY not set — skipping webhook signature validation')
+            return True
+        signature = request.headers.get('Telnyx-Signature-Ed25519', '')
+        timestamp = request.headers.get('Telnyx-Timestamp', '')
+        if not signature or not timestamp:
+            return False
+        try:
+            import nacl.signing
+            import nacl.encoding
+            verify_key = nacl.signing.VerifyKey(public_key, encoder=nacl.encoding.Base64Encoder)
+            signed_payload = f"{timestamp}|".encode() + request.get_data()
+            verify_key.verify(signed_payload, nacl.encoding.Base64Encoder.decode(signature))
+            return True
+        except ImportError:
+            logger.warning('pynacl not installed — skipping Telnyx webhook signature validation')
+            return True
+        except Exception as e:
+            logger.warning(f'Telnyx webhook signature validation failed: {e}')
+            return False
+
     params = request.form.to_dict() if request.method == 'POST' else {}
 
     from twilio.request_validator import RequestValidator
