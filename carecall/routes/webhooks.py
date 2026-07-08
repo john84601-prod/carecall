@@ -821,6 +821,19 @@ def telnyx_events():
 
     if event_type == 'call.answered':
         if call_type in ('reminder', 'wellness', 'emergency'):
+            if log and log.status != 'initiated':
+                # Telnyx has been observed redelivering call.answered more
+                # than once for the same call (confirmed live: 3 deliveries
+                # ~100-300ms apart for one emergency call). Without this
+                # guard, each redelivery re-issues gather_using_speak/audio
+                # on the same live call — overlapping gather commands raced
+                # each other badly enough that NONE of them ever started
+                # playing audio; the line just sat silent until it hung up.
+                # 'initiated' is the CallLog default at creation time and
+                # _telnyx_speak_gather below is what first moves it away from
+                # that (to 'reached_human' for reminder, 'answered' for
+                # wellness/emergency) — so this only skips redeliveries.
+                return '', 200
             # True async AMD: start the keypress gather immediately, assuming
             # a human, rather than waiting for the AMD result — this is what
             # eliminates the multi-second silence a human caller would
