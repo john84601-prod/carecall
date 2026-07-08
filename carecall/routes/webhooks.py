@@ -865,6 +865,22 @@ def telnyx_events():
         # speaking the voicemail message.
         result = p.get('result', 'human')
         if result in ('machine', 'fax'):
+            # Mark this now, not just via the gather_stop client_state tag
+            # below — Telnyx has been observed NOT reliably echoing that tag
+            # back on the resulting call.gather.ended (confirmed live: one
+            # wellness voicemail call got it back correctly, another
+            # otherwise-identical one came back with client_state=None).
+            # When that happens, call.gather.ended falls through to
+            # _telnyx_keypress with empty digits, which speaks the generic
+            # "we did not receive your response" line and hangs up — before
+            # the real voicemail message (queued separately, off
+            # call.machine.premium.greeting.ended) ever gets a chance to
+            # play. log.status='left_voicemail' here gives call.gather.ended
+            # a second, DB-backed way to recognize "this is the AMD
+            # cancellation" that doesn't depend on Telnyx's echo.
+            if log:
+                log.status = 'left_voicemail'
+                db.session.commit()
             _telnyx_safe_command(ccid, 'gather_stop', {'client_state': _AMD_REDIRECT_STATE})
         return '', 200
 
@@ -876,11 +892,14 @@ def telnyx_events():
         return '', 200
 
     if event_type == 'call.gather.ended':
-        if p.get('client_state') == _AMD_REDIRECT_STATE:
+        if p.get('client_state') == _AMD_REDIRECT_STATE or (log and log.status == 'left_voicemail'):
             # This is the gather we deliberately cancelled above because AMD
             # detected a machine — not a real (non-)response from a human.
             # The voicemail message gets spoken separately, once the
-            # greeting/beep event arrives.
+            # greeting/beep event arrives. Checked two ways: the client_state
+            # tag we set on gather_stop (not always echoed back reliably by
+            # Telnyx) and log.status (set the moment AMD reports machine/fax,
+            # above) as a DB-backed fallback that doesn't depend on that echo.
             return '', 200
         digits = p.get('digits', '') or ''
         _telnyx_keypress(call_type, ccid, session_id, log, contact_id, digits)
