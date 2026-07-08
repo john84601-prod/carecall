@@ -210,6 +210,11 @@ def reminder_keypress():
         _twiml_prompt(vr, 'success_goodbye')
     else:
         _twiml_prompt(vr, 'reminder_unsuccessful_closing')
+    # SignalWire's compat API has been observed cutting the call as soon as a
+    # <Say>/<Play> is queued rather than waiting for it to finish rendering —
+    # a short pause before Hangup gives the closing message room to actually
+    # play out instead of getting clipped.
+    vr.pause(length=1)
     vr.hangup()
     return _xml(vr)
 
@@ -378,6 +383,9 @@ def wellness_keypress():
     else:
         _twiml_prompt(vr, 'session_not_found_closing')
 
+    # See the matching comment in reminder_keypress() above — gives the
+    # closing message room to finish playing before SignalWire hangs up.
+    vr.pause(length=1)
     vr.hangup()
     return _xml(vr)
 
