@@ -103,10 +103,14 @@ def _telnyx_prompt_speak(ccid, key, **kwargs):
     from carecall.prompts import get_prompt_recording_path, get_prompt_text
     rec = get_prompt_recording_path(key)
     if rec:
-        _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{os.path.basename(rec)}"})
+        _telnyx_safe_command(ccid, 'playback_start', {
+            'audio_url': f"{_public_url()}/uploads/{os.path.basename(rec)}",
+            'client_state': _CLOSING_STATE,
+        })
     else:
         _telnyx_safe_command(ccid, 'speak', {
             'payload': get_prompt_text(key, **kwargs), 'voice': _voice(), 'language': 'en-US',
+            'client_state': _CLOSING_STATE,
         })
 
 
@@ -757,6 +761,14 @@ def inbound_recording():
 # real gather timeout/keypress. Telnyx requires this field to be base64.
 _AMD_REDIRECT_STATE = base64.b64encode(b'amd_redirect').decode()
 
+# client_state tag on the final closing speak/playback (voicemail message,
+# post-keypress "thank you"/"unsuccessful" line, test-call message). When a
+# keypress interrupts an in-progress gather_using_audio/gather_using_speak,
+# Telnyx fires a call.playback.ended/call.speak.ended for THAT interrupted
+# message too — untagged, so it doesn't match this and won't trigger a hangup
+# before the real closing message (tagged, below) has had a chance to play.
+_CLOSING_STATE = base64.b64encode(b'closing_message').decode()
+
 
 def _telnyx_safe_command(ccid, action, payload=None):
     """telnyx_command(), but tolerant of the call having already ended
@@ -852,7 +864,15 @@ def telnyx_events():
         return '', 200
 
     if event_type in ('call.speak.ended', 'call.playback.ended'):
-        _telnyx_safe_command(ccid, 'hangup')
+        if p.get('client_state') == _CLOSING_STATE:
+            # Only the closing message we deliberately spoke/played should
+            # end the call. A gather_using_audio/gather_using_speak message
+            # interrupted by a keypress also fires one of these events (for
+            # the original, untagged message) — ignoring it here stops that
+            # from hanging up the call before the real closing message
+            # (tagged, sent from _telnyx_keypress/_telnyx_speak_voicemail)
+            # has had a chance to play.
+            _telnyx_safe_command(ccid, 'hangup')
         return '', 200
 
     if event_type == 'call.hangup':
@@ -874,7 +894,10 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
             db.session.commit()
         schedule = log.schedule if log else None
         if schedule and schedule.mp3_filename:
-            _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+            _telnyx_safe_command(ccid, 'playback_start', {
+                'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}",
+                'client_state': _CLOSING_STATE,
+            })
         else:
             _telnyx_prompt_speak(ccid, 'reminder_message')
         return
@@ -887,7 +910,10 @@ def _telnyx_speak_voicemail(call_type, ccid, session_id, log, contact_id):
         if session:
             client, schedule, key = session.client, session.schedule, _required_keypress()
             if schedule.mp3_filename:
-                _telnyx_safe_command(ccid, 'playback_start', {'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}"})
+                _telnyx_safe_command(ccid, 'playback_start', {
+                    'audio_url': f"{_public_url()}/uploads/{schedule.mp3_filename}",
+                    'client_state': _CLOSING_STATE,
+                })
             else:
                 _telnyx_prompt_speak(ccid, 'wellness_voicemail_message', first_name=client.first_name, key=key)
         else:
