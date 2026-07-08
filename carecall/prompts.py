@@ -73,11 +73,15 @@ def prompt_recording_filename(key):
     return f"_prompt_{key}.mp3"
 
 
-def get_prompt_text(key, **kwargs):
+def get_prompt_text(prompt_key, **kwargs):
+    # Named prompt_key, not key — some prompts (e.g. wellness_message,
+    # emergency_message) take a `key` template kwarg for the DTMF digit to
+    # press, which would otherwise collide with this parameter (TypeError:
+    # got multiple values for argument 'key').
     from carecall.routes.api import _load_system_config
     cfg = _load_system_config()
-    entry = cfg.get('prompts', {}).get(key, {})
-    text = entry.get('script') or PROMPT_DEFAULTS.get(key, '')
+    entry = cfg.get('prompts', {}).get(prompt_key, {})
+    text = entry.get('script') or PROMPT_DEFAULTS.get(prompt_key, '')
     try:
         return text.format(**kwargs)
     except (KeyError, IndexError):

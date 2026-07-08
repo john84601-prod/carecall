@@ -88,20 +88,26 @@ def _required_keypress():
 # mp3 (schedule.mp3_filename) still takes priority over these when set —
 # these are the fallback used whenever no client-specific recording exists.
 
-def _twiml_prompt(target, key, **kwargs):
-    """Say or play system prompt `key` onto a VoiceResponse or Gather object
-    (both expose .say()/.play(), so either can be passed as `target`)."""
+def _twiml_prompt(target, prompt_key, **kwargs):
+    """Say or play system prompt `prompt_key` onto a VoiceResponse or Gather
+    object (both expose .say()/.play(), so either can be passed as `target`).
+
+    Named prompt_key, not key — some prompts (e.g. wellness_message,
+    emergency_message) take a `key` template kwarg for the DTMF digit to
+    press, which would otherwise collide with this parameter (TypeError:
+    got multiple values for argument 'key')."""
     from carecall.prompts import get_prompt_recording_path, get_prompt_text
-    rec = get_prompt_recording_path(key)
+    rec = get_prompt_recording_path(prompt_key)
     if rec:
         target.play(f"{_public_url()}/uploads/{os.path.basename(rec)}")
     else:
-        target.say(get_prompt_text(key, **kwargs), voice=_voice())
+        target.say(get_prompt_text(prompt_key, **kwargs), voice=_voice())
 
 
-def _telnyx_prompt_speak(ccid, key, **kwargs):
+def _telnyx_prompt_speak(ccid, prompt_key, **kwargs):
+    # Named prompt_key, not key — see _twiml_prompt's docstring above for why.
     from carecall.prompts import get_prompt_recording_path, get_prompt_text
-    rec = get_prompt_recording_path(key)
+    rec = get_prompt_recording_path(prompt_key)
     if rec:
         _telnyx_safe_command(ccid, 'playback_start', {
             'audio_url': f"{_public_url()}/uploads/{os.path.basename(rec)}",
@@ -109,7 +115,7 @@ def _telnyx_prompt_speak(ccid, key, **kwargs):
         })
     else:
         _telnyx_safe_command(ccid, 'speak', {
-            'payload': get_prompt_text(key, **kwargs), 'voice': _voice(), 'language': 'en-US',
+            'payload': get_prompt_text(prompt_key, **kwargs), 'voice': _voice(), 'language': 'en-US',
             'client_state': _CLOSING_STATE,
         })
 
