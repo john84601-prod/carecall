@@ -114,15 +114,19 @@ def _telnyx_prompt_speak(ccid, key, **kwargs):
         })
 
 
-def _telnyx_prompt_gather(ccid, key, gather_params, **kwargs):
+def _telnyx_prompt_gather(ccid, prompt_key, gather_params, **kwargs):
+    # Named prompt_key, not key — some prompts (e.g. emergency_message) take
+    # a `key` template kwarg for the DTMF digit to press, which would
+    # otherwise collide with this parameter (TypeError: got multiple values
+    # for argument 'key').
     from carecall.prompts import get_prompt_recording_path, get_prompt_text
-    rec = get_prompt_recording_path(key)
+    rec = get_prompt_recording_path(prompt_key)
     gp = dict(gather_params)
     if rec:
         gp['audio_url'] = f"{_public_url()}/uploads/{os.path.basename(rec)}"
         _telnyx_safe_command(ccid, 'gather_using_audio', gp)
     else:
-        gp.update(payload=get_prompt_text(key, **kwargs), voice=_voice(), language='en-US')
+        gp.update(payload=get_prompt_text(prompt_key, **kwargs), voice=_voice(), language='en-US')
         _telnyx_safe_command(ccid, 'gather_using_speak', gp)
 
 
