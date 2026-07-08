@@ -783,6 +783,16 @@ def telnyx_events():
     log_id     = request.args.get('log_id',     type=int)
     contact_id = request.args.get('contact_id', type=int)
 
+    # Temporary diagnostic logging — trying to catch the exact event sequence
+    # around a mid-message keypress hanging up early. Safe to remove once
+    # that's root-caused.
+    logger.info(
+        f"Telnyx event={event_type!r} call_type={call_type!r} "
+        f"session_id={session_id} ccid={ccid} "
+        f"digits={p.get('digits')!r} result={p.get('result')!r} "
+        f"client_state={p.get('client_state')!r}"
+    )
+
     log = db.session.get(CallLog, log_id) if log_id else None
 
     if not call_type:
