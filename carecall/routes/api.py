@@ -6,7 +6,7 @@ from datetime import date, datetime as _dt
 
 from flask import Blueprint, jsonify, request, current_app
 from carecall import db
-from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout, InboundMessage
+from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact, AudioFile, CallLog, WellnessSession, ReminderSession, WellnessBlackout, InboundMessage, SystemEvent
 
 # Project root (two levels up from this file: routes/ → carecall/ → project/)
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1345,6 +1345,20 @@ def get_system_status():
         'server_time':       server_time,
         'all_ok':            scheduler_ok and url_ok and provider_ok and not calls_paused,
     })
+
+
+@api_bp.route('/system-events', methods=['GET'])
+def get_system_events():
+    """Internet-outage and service-startup history for the System Health tab.
+    Returns the last 30 days, most recent first — the frontend groups these
+    by day for display."""
+    from datetime import timedelta
+    cutoff = _dt.utcnow() - timedelta(days=30)
+    events = (SystemEvent.query
+              .filter(SystemEvent.started_at >= cutoff)
+              .order_by(SystemEvent.started_at.desc())
+              .all())
+    return jsonify([e.to_dict() for e in events])
 
 
 @api_bp.route('/calls/paused', methods=['GET'])

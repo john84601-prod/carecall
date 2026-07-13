@@ -30,6 +30,7 @@
   <button class="nav-btn" data-tab="audio">Audio Files</button>
   <button class="nav-btn" data-tab="messages">Messages <span class="nav-badge" id="msgBadge" style="display:none"></span></button>
   <button class="nav-btn" data-tab="recordings">Recordings</button>
+  <button class="nav-btn" data-tab="systemhealth">System Health</button>
   <button class="nav-btn" data-tab="settings">Settings</button>
 </nav>
 
@@ -830,6 +831,20 @@
         </select>
       </div>
       <div id="recList">
+        <span style="color:var(--muted);font-size:.85rem">Loading…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── System Health ───────────────────────────────────────────────── -->
+  <section id="tab-systemhealth" class="tab">
+    <div class="settings-panel">
+      <h2>System Health</h2>
+      <p>Internet-connectivity outages (checked every minute) and service restarts, grouped by day. Only actual outage spans are recorded — a fully-connected day adds nothing here.</p>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+        <button class="btn-ghost btn-sm" onclick="loadSystemHealth()">🔄 Refresh</button>
+      </div>
+      <div id="systemHealthList">
         <span style="color:var(--muted);font-size:.85rem">Loading…</span>
       </div>
     </div>

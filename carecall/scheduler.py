@@ -32,6 +32,8 @@ def init_scheduler(app):
     _register_sms_webhook()
     _init_backup_job()
     _register_recording_cleanup_job()
+    _log_startup_event()
+    _register_connectivity_check()
     logger.info("Scheduler started and jobs loaded")
 
 
@@ -225,6 +227,75 @@ def _startup_missed_call_check():
             logger.info("Startup audit: no missed calls detected")
 
 
+# ── System health: connectivity monitor + startup log ──────────────────────────
+#
+# Records only state CHANGES, not a datapoint per check — an 'internet_outage'
+# SystemEvent row is created the moment a check first fails and gets ended_at
+# filled in once a check succeeds again, so a day with perfect connectivity
+# adds zero rows. 'startup' rows are a single instant marker per service
+# start (covers both OS reboots and plain `systemctl restart` — the app can't
+# tell those apart from inside the process, but every start gets logged
+# either way). Surfaced in the dashboard's System Health tab.
+
+def _log_startup_event():
+    with _app.app_context():
+        from carecall.models import SystemEvent, db
+        db.session.add(SystemEvent(event_type='startup', started_at=datetime.utcnow()))
+        db.session.commit()
+        logger.info("System health: startup event logged")
+
+
+def _connectivity_check_target():
+    host = os.getenv('CONNECTIVITY_CHECK_HOST', '8.8.8.8')
+    port = int(os.getenv('CONNECTIVITY_CHECK_PORT', 53))
+    return host, port
+
+
+def _is_internet_up():
+    """Lightweight, dependency-free reachability check — a raw TCP connect
+    to a public DNS resolver (default 8.8.8.8:53). No ICMP (would need root
+    on Linux for a real ping) and provider-independent (doesn't tie 'is the
+    internet up' to whichever VOICE_PROVIDER happens to be configured)."""
+    import socket
+    host, port = _connectivity_check_target()
+    try:
+        socket.create_connection((host, port), timeout=5).close()
+        return True
+    except OSError:
+        return False
+
+
+def _register_connectivity_check():
+    _scheduler.add_job(
+        func=_check_connectivity,
+        trigger='interval',
+        minutes=1,
+        id='connectivity_check',
+        replace_existing=True,
+    )
+    logger.info("Connectivity check job registered (every 1m)")
+
+
+def _check_connectivity():
+    with _app.app_context():
+        from carecall.models import SystemEvent, db
+
+        up = _is_internet_up()
+        open_outage = SystemEvent.query.filter_by(
+            event_type='internet_outage', ended_at=None
+        ).first()
+
+        if not up and not open_outage:
+            db.session.add(SystemEvent(event_type='internet_outage', started_at=datetime.utcnow()))
+            db.session.commit()
+            logger.warning("System health: internet outage started")
+        elif up and open_outage:
+            open_outage.ended_at = datetime.utcnow()
+            db.session.commit()
+            mins = round((open_outage.ended_at - open_outage.started_at).total_seconds() / 60, 1)
+            logger.warning(f"System health: internet outage resolved after {mins}m")
+
+
 def _classify_call_error(exc, base_url_obtained):
     """Return 'internet_down' for network-level failures, 'failed' for everything else.
 
@@ -242,6 +313,30 @@ def _classify_call_error(exc, base_url_obtained):
     if isinstance(exc, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError)):
         return 'internet_down'
     return 'failed'
+
+
+def _outage_grace_minutes():
+    """How long past a call's originally scheduled time we'll keep retrying
+    if the failure is internet-down specifically, before giving up on that
+    call for today. Override with INTERNET_OUTAGE_GRACE_MINUTES in .env."""
+    return int(os.getenv('INTERNET_OUTAGE_GRACE_MINUTES', 15))
+
+
+def _outage_retry_minutes():
+    """Retry cadence used specifically while a call is failing due to
+    internet_down — deliberately shorter than a schedule's normal
+    attempt_interval_minutes (tuned for 'did the client pick up', not 'is
+    the internet back yet'), so the grace window actually gets a few tries
+    rather than just one. Override with INTERNET_OUTAGE_RETRY_MINUTES."""
+    return int(os.getenv('INTERNET_OUTAGE_RETRY_MINUTES', 3))
+
+
+def _outage_grace_exceeded(anchor_time):
+    """True once we're past the grace window measured from anchor_time
+    (a session's started_at — its originally scheduled fire time)."""
+    if not anchor_time:
+        return False
+    return datetime.utcnow() - anchor_time > timedelta(minutes=_outage_grace_minutes())
 
 
 # ── Recording helpers ─────────────────────────────────────────────────────────
@@ -393,9 +488,22 @@ def _attempt_reminder_call(session_id):
             logger.error(f"Reminder call {err_status} for session {session_id}: {e}")
             log.status = err_status
             log.notes = str(e)
+            if err_status == 'internet_down' and _outage_grace_exceeded(session.started_at):
+                session.status = 'failed'
+                session.resolved_at = datetime.utcnow()
+                log.status = 'missed_outage'
+                db.session.commit()
+                logger.warning(
+                    f"Reminder session {session_id}: internet outage exceeded the "
+                    f"{_outage_grace_minutes()}m grace period — call abandoned for today"
+                )
+                return
             session.status = 'pending'
             db.session.commit()
-            handle_reminder_no_response(session_id)
+            if err_status == 'internet_down':
+                _schedule_reminder_retry(session_id, _outage_retry_minutes())
+            else:
+                handle_reminder_no_response(session_id)
             return
 
         db.session.commit()
@@ -545,8 +653,21 @@ def _attempt_wellness_call(session_id):
             logger.error(f"Wellness call {err_status} for session {session_id}: {e}")
             log.status = err_status
             log.notes = str(e)
-            session.status = 'pending'
-            _schedule_wellness_retry(session_id, session.schedule.attempt_interval_minutes)
+            if err_status == 'internet_down' and _outage_grace_exceeded(session.started_at):
+                session.status = 'failed'
+                session.resolved_at = datetime.utcnow()
+                log.status = 'missed_outage'
+                logger.warning(
+                    f"Wellness session {session_id}: internet outage exceeded the "
+                    f"{_outage_grace_minutes()}m grace period — call abandoned for today"
+                )
+            else:
+                session.status = 'pending'
+                retry_delay = (
+                    _outage_retry_minutes() if err_status == 'internet_down'
+                    else session.schedule.attempt_interval_minutes
+                )
+                _schedule_wellness_retry(session_id, retry_delay)
 
         db.session.commit()
 

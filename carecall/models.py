@@ -386,3 +386,29 @@ class CallLog(db.Model):
             'next_attempt_at': _next_attempt_at,
             'notes': self.notes,
         }
+
+
+class SystemEvent(db.Model):
+    """Internet-connectivity outages and service startups, for the daily
+    system-health summary. An outage row is created the moment a
+    connectivity check first fails and gets ended_at filled in once a check
+    succeeds again — only actual down-spans get stored, not a row per
+    check."""
+    __tablename__ = 'system_events'
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(20), nullable=False)  # 'internet_outage' | 'startup'
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    ended_at   = db.Column(db.DateTime, nullable=True)  # null while an outage is ongoing; unused for 'startup'
+
+    def to_dict(self):
+        duration_seconds = None
+        if self.ended_at:
+            duration_seconds = int((self.ended_at - self.started_at).total_seconds())
+        return {
+            'id': self.id,
+            'event_type': self.event_type,
+            'started_at': self.started_at.isoformat() + 'Z',
+            'ended_at': self.ended_at.isoformat() + 'Z' if self.ended_at else None,
+            'duration_seconds': duration_seconds,
+            'ongoing': self.event_type == 'internet_outage' and self.ended_at is None,
+        }

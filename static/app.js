@@ -149,6 +149,7 @@ function setupTabs() {
         case 'audio':     loadAudio();     break;
         case 'messages':    loadMessages();    break;
         case 'recordings':  loadRecordings();  break;
+        case 'systemhealth': loadSystemHealth(); break;
         case 'settings':    loadSettings(); loadSystemPrompts(); break;
       }
     });
@@ -2556,6 +2557,7 @@ function _buildCallReportHtml(rows, title, subtitle) {
     const statusLabel = {
       system_down:   'System Down',
       internet_down: 'Internet Down',
+      missed_outage: 'Missed (Outage)',
       reached_human: 'Reached Human',
       left_voicemail:'Left Voicemail',
       'no-answer':   'No Answer',
@@ -2672,6 +2674,7 @@ function statusBadge(s) {
     completed:        'badge-gray',
     system_down:      'badge-purple',
     internet_down:    'badge-purple',
+    missed_outage:    'badge-purple',
   };
   const labels = {
     reached_human:    'Reached Human',
@@ -2680,6 +2683,7 @@ function statusBadge(s) {
     'wrong-keypress': 'Wrong Key',
     system_down:      'System Down',
     internet_down:    'Internet Down',
+    missed_outage:    'Missed (Outage)',
   };
   const tips = {
     initiated:        'The call was placed but has not connected yet.',
@@ -2695,6 +2699,7 @@ function statusBadge(s) {
     completed:        'The call finished normally.',
     system_down:      'Call missed — CareCall was not running at the scheduled time. Manual follow-up may be needed.',
     internet_down:    'Call attempted but failed — no internet or Twilio unreachable at the time.',
+    missed_outage:    'Call abandoned — internet was down past the configured grace period, so no further retries were attempted today.',
   };
   const tip = tips[s] ? ` data-tooltip="${tips[s]}"` : '';
   return `<span class="badge ${classes[s] || 'badge-gray'}"${tip}>${esc(labels[s] || s)}</span>`;
@@ -3496,4 +3501,68 @@ async function deleteRecording(id) {
     renderRecordings();
     toast('Recording deleted.');
   } catch(e) { toast(e.message, 'error'); }
+}
+
+async function loadSystemHealth() {
+  const el = document.getElementById('systemHealthList');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">Loading…</span>';
+  try {
+    const events = await api('GET', '/system-events');
+    renderSystemHealth(events);
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--red);font-size:.85rem">${esc(e.message)}</span>`;
+  }
+}
+
+function renderSystemHealth(events) {
+  const el = document.getElementById('systemHealthList');
+  if (!el) return;
+
+  if (!events.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">No outages or restarts in the last 30 days.</span>';
+    return;
+  }
+
+  // Group by local calendar day (based on started_at)
+  const byDay = {};
+  events.forEach(e => {
+    const key = new Date(e.started_at).toLocaleDateString();
+    (byDay[key] = byDay[key] || []).push(e);
+  });
+
+  const fmtTime = iso => new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  const fmtDur = secs => {
+    if (secs == null) return '';
+    const m = Math.round(secs / 60);
+    if (m < 1) return '<1m';
+    if (m < 60) return `${m}m`;
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+
+  el.innerHTML = Object.keys(byDay).map(day => {
+    const items = byDay[day].slice().sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+    const rows = items.map(e => {
+      if (e.event_type === 'startup') {
+        return `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:.75rem;font-weight:600;color:var(--blue, #2563eb);text-transform:uppercase">Restart</span>
+          <span style="font-size:.85rem">${fmtTime(e.started_at)}</span>
+        </div>`;
+      }
+      const range = e.ongoing
+        ? `${fmtTime(e.started_at)} &ndash; ongoing`
+        : `${fmtTime(e.started_at)} &ndash; ${fmtTime(e.ended_at)} (${fmtDur(e.duration_seconds)})`;
+      return `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:.75rem;font-weight:600;color:${e.ongoing ? 'var(--red)' : 'var(--muted)'};text-transform:uppercase">${e.ongoing ? 'Outage (ongoing)' : 'Outage'}</span>
+          <span style="font-size:.85rem">${range}</span>
+        </div>`;
+    }).join('');
+    return `
+    <div class="msg-card">
+      <div class="msg-card-top"><strong>${esc(day)}</strong></div>
+      ${rows}
+    </div>`;
+  }).join('');
 }
