@@ -16,6 +16,9 @@ def create_app():
     )
 
     app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-this')
+    # Lax blocks the session cookie from being sent on cross-site POST/PUT/DELETE
+    # fetch requests (CSRF), while still allowing normal same-site navigation.
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(
         os.path.dirname(os.path.dirname(__file__)), 'carecall.db'
     )

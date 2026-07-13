@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import json as _json
 import zipfile
 from datetime import date, datetime as _dt
@@ -362,11 +363,14 @@ def upload_file():
 
     client_id   = request.form.get('client_id',   type=int)
     display_name = request.form.get('display_name', '').strip()
-    filename = re.sub(r'[^\w\-.]', '_', f.filename)
-    f.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
-
+    orig_filename = re.sub(r'[^\w\-.]', '_', f.filename)
     if not display_name:
-        display_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+        display_name = orig_filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+
+    # Random prefix so /uploads/<filename> (unauthenticated — the voice provider
+    # must be able to fetch it directly) isn't guessable from the display name.
+    filename = f"{secrets.token_hex(8)}_{orig_filename}"
+    f.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
 
     # Upsert AudioFile record
     af = AudioFile.query.filter_by(filename=filename).first()
@@ -409,8 +413,10 @@ def save_recording():
     if not name:
         return jsonify({'error': 'Filename is required'}), 400
 
-    # Sanitize and force .mp3 extension
-    filename = re.sub(r'[^\w\-]', '_', name) + '.mp3'
+    # Sanitize and force .mp3 extension. Random prefix so /uploads/<filename>
+    # (unauthenticated — the voice provider must be able to fetch it directly)
+    # isn't guessable from the name the admin typed.
+    filename = f"{secrets.token_hex(8)}_" + re.sub(r'[^\w\-]', '_', name) + '.mp3'
     output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
 
     # Save the raw browser audio to a temp file
