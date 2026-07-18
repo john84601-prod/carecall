@@ -404,6 +404,15 @@ def _purge_old_recordings():
         logger.info(f"Recording cleanup: purged {deleted} recording(s) older than {days} days")
 
 
+def _local_day_start_utc():
+    """UTC datetime corresponding to local midnight today — used to bound
+    'has this schedule already produced a session today' checks."""
+    from datetime import time as _t
+    now_local  = datetime.now()
+    utc_offset = datetime.utcnow() - now_local
+    return datetime.combine(now_local.date(), _t.min) + utc_offset
+
+
 # ── Reminder calls ─────────────────────────────────────────────────────────────
 
 def _fire_reminder(schedule_id):
@@ -419,13 +428,21 @@ def _fire_reminder(schedule_id):
         if not schedule or not schedule.active or not schedule.client.active:
             return
 
-        # Skip if a session for this schedule is already in progress
-        in_progress = ReminderSession.query.filter(
+        # Skip if a session for this schedule already exists today — whether
+        # still in progress (pending/calling) or already resolved, including
+        # via Admin OK. Checking only in-progress statuses here meant an
+        # Admin OK recorded before the scheduled time (status='admin_ok',
+        # neither pending nor calling) didn't stop the call from going out
+        # anyway when the cron job fired later — confirmed live.
+        already_today = ReminderSession.query.filter(
             ReminderSession.schedule_id == schedule_id,
-            ReminderSession.status.in_(['pending', 'calling']),
+            ReminderSession.started_at  >= _local_day_start_utc(),
         ).first()
-        if in_progress:
-            logger.info(f"Reminder session {in_progress.id} still active for schedule {schedule_id} — skipping")
+        if already_today:
+            logger.info(
+                f"Reminder session {already_today.id} (status={already_today.status}) "
+                f"already exists today for schedule {schedule_id} — skipping"
+            )
             return
 
         session = ReminderSession(schedule_id=schedule_id, client_id=schedule.client_id)
@@ -575,13 +592,22 @@ def _fire_wellness_check(schedule_id):
         if not schedule or not schedule.active or not schedule.client.active:
             return
 
-        # Skip if a session for this schedule is still in progress
-        in_progress = WellnessSession.query.filter(
+        # Skip if a session for this schedule already exists today — whether
+        # still in progress (pending/calling/escalating) or already
+        # resolved, including via Admin OK. Checking only in-progress
+        # statuses here meant an Admin OK recorded before the scheduled time
+        # (status='admin_ok', none of those three) didn't stop the call
+        # from going out anyway when the cron job fired later — confirmed
+        # live.
+        already_today = WellnessSession.query.filter(
             WellnessSession.schedule_id == schedule_id,
-            WellnessSession.status.in_(['pending', 'calling', 'escalating']),
+            WellnessSession.started_at  >= _local_day_start_utc(),
         ).first()
-        if in_progress:
-            logger.info(f"Session {in_progress.id} still active for schedule {schedule_id} — skipping")
+        if already_today:
+            logger.info(
+                f"Session {already_today.id} (status={already_today.status}) already "
+                f"exists today for schedule {schedule_id} — skipping"
+            )
             return
 
         # Skip if today falls within a wellness blackout for this client
