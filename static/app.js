@@ -1567,8 +1567,12 @@ async function loadSettings() {
     document.getElementById('versionInfo').innerHTML =
       '<span style="color:var(--muted);font-size:.85rem">Version info unavailable</span>';
   }
-  // Load backup config
+  // Load backup config, then scan drives so we can flag a saved destination
+  // that no longer matches any currently-mounted drive (e.g. a USB stick
+  // that got remounted at a new /media/.../NAME1 path after an unclean
+  // unmount, silently orphaning the old saved path).
   await loadBackupConfig();
+  await loadBackupDrives();
   // Load call pause state
   await loadCallsPaused();
   // Load voice setting
@@ -3097,6 +3101,7 @@ function discardRecording() {
 // ── Backup ──────────────────────────────────────────────────────────────────
 
 let _backupDrives = [];           // last drive list from server
+let _savedBackupDestination = ''; // destination loaded from backup_config.json
 let _fileBrowserCurrentPath = ''; // current path open in file browser
 let _fileBrowserEntries = [];     // flat list: [{path, is_dir}, ...] indexed by onclick
 
@@ -3117,6 +3122,7 @@ async function loadBackupDrives() {
       opt.textContent = `${d.label || d.device} (${d.size}) — ${d.mountpoint}`;
       sel.appendChild(opt);
     });
+    _checkBackupDestinationStale();
     note.textContent = _backupDrives.length
       ? `${_backupDrives.length} drive(s) found`
       : 'No USB drives detected';
@@ -3299,6 +3305,34 @@ function backupDestPathChanged() {
   document.getElementById('backupDestStatus').textContent = v ? `Custom path: ${v}` : '';
 }
 
+// Flags when the SAVED backup destination (the one the scheduled/automatic
+// backup job actually uses) no longer matches any currently-mounted drive —
+// e.g. a USB stick unplugged without ejecting and remounted under a new
+// /media/.../NAME1 path, silently orphaning the old saved path until a
+// scheduled backup fails with a permission/not-found error nobody notices.
+function _checkBackupDestinationStale() {
+  const el = document.getElementById('backupDestWarning');
+  if (!el) return;
+  const dest = _savedBackupDestination;
+  if (!dest || !_backupDrives.length) {
+    el.style.display = 'none';
+    return;
+  }
+  const liveMountpoints = _backupDrives.filter(d => d.mountpoint).map(d => d.mountpoint);
+  // Only flag paths that look like a USB mount point — a deliberately-typed
+  // custom server path isn't expected to show up in the drive list at all.
+  const looksLikeUsbMount = dest.startsWith('/media/') || dest.startsWith('/mnt/');
+  if (!looksLikeUsbMount || liveMountpoints.includes(dest)) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = `⚠️ Saved backup destination <code>${esc(dest)}</code> doesn't match any currently-mounted ` +
+    `drive. The USB drive may have been unplugged without ejecting and remounted under a different path ` +
+    `(e.g. a trailing "1" added to avoid a naming conflict). Select the correct drive above and click ` +
+    `<strong>Save Schedule</strong>, or scheduled backups will keep failing silently.`;
+}
+
 function _getBackupDestination() {
   return document.getElementById('backupDestPath').value.trim();
 }
@@ -3342,6 +3376,7 @@ async function loadBackupConfig() {
     document.getElementById('backupTime').value        = cfg.time        || '02:00';
     document.getElementById('backupDayOfWeek').value   = cfg.day_of_week || 'sun';
     document.getElementById('backupDayOfMonth').value  = String(cfg.day_of_month || 1);
+    _savedBackupDestination = cfg.destination || '';
     if (cfg.destination) {
       document.getElementById('backupDestPath').value = cfg.destination;
       document.getElementById('backupDestStatus').textContent = `Saved destination: ${cfg.destination}`;
@@ -3389,6 +3424,8 @@ async function saveBackupConfig() {
       resultEl.innerHTML = '<span style="color:var(--green)">✔ Schedule saved</span>';
       setTimeout(() => { resultEl.textContent = ''; }, 4000);
       toast('Backup schedule saved', 'success');
+      _savedBackupDestination = dest;
+      _checkBackupDestinationStale();
     }
   } catch (e) {
     resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
