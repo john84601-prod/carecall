@@ -141,88 +141,140 @@ def _cancel_session_jobs(session_id):
 
 # ── Startup missed-call audit ─────────────────────────────────────────────────
 
+def _missed_call_lookback_days():
+    """How many days back the startup audit checks for missed calls, so an
+    outage spanning a day boundary (e.g. an evening schedule missed the night
+    before an early-morning restart) still gets caught — not just schedules
+    that should have fired "today" relative to whenever the service happens
+    to come back up. Override with MISSED_CALL_LOOKBACK_DAYS."""
+    return int(os.getenv('MISSED_CALL_LOOKBACK_DAYS', 3))
+
+
+def _catchup_window_minutes():
+    """A missed call discovered within this many minutes of right now gets an
+    actual late catch-up call attempt, not just a log entry — the service
+    likely just came back up moments after the scheduled time. Anything
+    older is logged only; we don't want to be calling someone at 3am because
+    the Pi was down overnight. Override with MISSED_CALL_CATCHUP_MINUTES."""
+    return int(os.getenv('MISSED_CALL_CATCHUP_MINUTES', 30))
+
+
 def _startup_missed_call_check():
-    """On startup, create a 'system_down' CallLog entry for every schedule that
-    should have fired today but has no session or call log record at all.
+    """On startup, create a 'system_down' CallLog entry for every schedule
+    occurrence within the lookback window that should have fired but has no
+    session or call log record at all. If the miss is recent (within
+    _catchup_window_minutes()), also attempts a real catch-up call via the
+    normal _fire_reminder/_fire_wellness_check path instead of only logging
+    it.
 
     This covers the case where the Pi was off, the service crashed, or systemd
     hadn't started yet when the scheduled time passed.  Staff can then review
     Today's Calls and manually follow up with any flagged clients.
     """
     with _app.app_context():
-        from datetime import date as _date, datetime as _dt, time as _t
+        from datetime import date as _date, datetime as _dt, time as _t, timedelta as _td
         from carecall.models import Schedule, WellnessSession, ReminderSession, CallLog, db
 
-        now_local   = _dt.now()
-        today       = now_local.date()
-        utc_offset  = _dt.utcnow() - now_local          # timedelta: how far ahead UTC is
-        today_start = _dt.combine(today, _t.min) + utc_offset  # local midnight as UTC
-
-        # APScheduler and Python weekday() both use 0=Mon … 6=Sun
-        today_dow = today.weekday()
+        now_local  = _dt.now()
+        utc_offset = _dt.utcnow() - now_local          # timedelta: how far ahead UTC is
+        catchup_window = _td(minutes=_catchup_window_minutes())
+        lookback_days  = _missed_call_lookback_days()
 
         missed = 0
+        caught_up = 0
         for schedule in Schedule.query.filter_by(active=True).all():
             if not schedule.client or not schedule.client.active:
                 continue
 
-            # Does this schedule run today?
             try:
                 sched_days = [int(d) for d in schedule.days_of_week.split(',')]
                 sched_h, sched_m = map(int, schedule.time_of_day.split(':'))
             except (ValueError, AttributeError):
                 continue
-            if today_dow not in sched_days:
-                continue
 
-            # Has the scheduled time already passed?
-            sched_local = _dt.combine(today, _t(sched_h, sched_m))
-            if sched_local >= now_local:
-                continue  # hasn't fired yet today — nothing missed
+            # Walk back over the lookback window, oldest day first, so a
+            # catch-up call (if any) fires for the earliest unresolved miss.
+            for days_ago in range(lookback_days, -1, -1):
+                day = now_local.date() - _td(days=days_ago)
 
-            # Is there already any session or log for this schedule today?
-            if schedule.call_type == 'wellness':
-                has_record = WellnessSession.query.filter(
-                    WellnessSession.schedule_id == schedule.id,
-                    WellnessSession.started_at  >= today_start,
-                ).first()
-            else:
-                has_record = ReminderSession.query.filter(
-                    ReminderSession.schedule_id == schedule.id,
-                    ReminderSession.started_at  >= today_start,
-                ).first()
+                # APScheduler and Python weekday() both use 0=Mon … 6=Sun
+                if day.weekday() not in sched_days:
+                    continue
 
-            if not has_record:
-                # Also check for an existing call log (e.g. from a previous startup)
-                has_record = CallLog.query.filter(
-                    CallLog.schedule_id == schedule.id,
-                    CallLog.timestamp   >= today_start,
-                ).first()
+                sched_local = _dt.combine(day, _t(sched_h, sched_m))
+                if sched_local >= now_local:
+                    continue  # hasn't fired yet — nothing missed
 
-            if has_record:
-                continue  # already recorded — nothing to do
+                day_start = _dt.combine(day, _t.min) + utc_offset  # local midnight as UTC
+                day_end   = day_start + _td(days=1)
 
-            # Create a system_down entry timestamped at the missed scheduled time
-            sched_utc = sched_local + utc_offset
-            db.session.add(CallLog(
-                schedule_id    = schedule.id,
-                client_id      = schedule.client_id,
-                call_type      = schedule.call_type,
-                attempt_number = 1,
-                status         = 'system_down',
-                timestamp      = sched_utc,
-                notes          = 'Scheduled call missed — CareCall service was not running.',
-            ))
-            missed += 1
+                # Is there already any session or log for this schedule that day?
+                if schedule.call_type == 'wellness':
+                    has_record = WellnessSession.query.filter(
+                        WellnessSession.schedule_id == schedule.id,
+                        WellnessSession.started_at  >= day_start,
+                        WellnessSession.started_at  <  day_end,
+                    ).first()
+                else:
+                    has_record = ReminderSession.query.filter(
+                        ReminderSession.schedule_id == schedule.id,
+                        ReminderSession.started_at  >= day_start,
+                        ReminderSession.started_at  <  day_end,
+                    ).first()
+
+                if not has_record:
+                    # Also check for an existing call log (e.g. from a previous startup)
+                    has_record = CallLog.query.filter(
+                        CallLog.schedule_id == schedule.id,
+                        CallLog.timestamp   >= day_start,
+                        CallLog.timestamp   <  day_end,
+                    ).first()
+
+                if has_record:
+                    continue  # already recorded — nothing to do
+
+                age = now_local - sched_local
+                if age <= catchup_window:
+                    logger.warning(
+                        f"Startup audit: {schedule.call_type} schedule {schedule.id} "
+                        f"(client {schedule.client_id}) missed at {schedule.time_of_day} "
+                        f"on {day} ({age.total_seconds() / 60:.1f}m ago) — attempting catch-up call"
+                    )
+                    # _fire_wellness_check/_fire_reminder open their own nested
+                    # app context and commit their own writes — commit first so
+                    # there's no pending transaction on this session for SQLite
+                    # to collide with.
+                    db.session.commit()
+                    if schedule.call_type == 'wellness':
+                        _fire_wellness_check(schedule.id)
+                    else:
+                        _fire_reminder(schedule.id)
+                    caught_up += 1
+                else:
+                    # Create a system_down entry timestamped at the missed scheduled time
+                    sched_utc = sched_local + utc_offset
+                    db.session.add(CallLog(
+                        schedule_id    = schedule.id,
+                        client_id      = schedule.client_id,
+                        call_type      = schedule.call_type,
+                        attempt_number = 1,
+                        status         = 'system_down',
+                        timestamp      = sched_utc,
+                        notes          = f'Scheduled call missed on {day.isoformat()} — CareCall service was not running.',
+                    ))
+                    db.session.commit()
+                    missed += 1
+                    logger.warning(
+                        f"Startup audit: system_down logged for {schedule.call_type} "
+                        f"schedule {schedule.id} (client {schedule.client_id}) "
+                        f"missed at {schedule.time_of_day} on {day}"
+                    )
+
+        if missed or caught_up:
             logger.warning(
-                f"Startup audit: system_down logged for {schedule.call_type} "
-                f"schedule {schedule.id} (client {schedule.client_id}) "
-                f"missed at {schedule.time_of_day}"
+                f"Startup audit: {missed} missed call(s) logged as system_down, "
+                f"{caught_up} caught up with a late call attempt"
             )
-
-        if missed:
-            db.session.commit()
-            logger.warning(f"Startup audit: {missed} missed call(s) logged as system_down")
         else:
             logger.info("Startup audit: no missed calls detected")
 
