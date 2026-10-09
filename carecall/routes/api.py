@@ -13,6 +13,7 @@ from carecall.models import Client, EmergencyContact, Schedule, ScheduleContact,
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _BACKUP_CONFIG_PATH  = os.path.join(_APP_ROOT, 'backup_config.json')
 _SYSTEM_CONFIG_PATH  = os.path.join(_APP_ROOT, 'system_config.json')
+_REBOOT_CONFIG_PATH  = os.path.join(_APP_ROOT, 'reboot_config.json')
 
 api_bp = Blueprint('api', __name__)
 
@@ -1686,6 +1687,43 @@ def save_backup_config():
     return jsonify({'success': True})
 
 
+@api_bp.route('/reboot/config', methods=['GET'])
+def get_reboot_config():
+    return jsonify(_load_reboot_config())
+
+
+@api_bp.route('/reboot/config', methods=['POST'])
+def save_reboot_config():
+    data = request.get_json() or {}
+    config = {
+        'enabled':      bool(data.get('enabled', False)),
+        'frequency':    str(data.get('frequency', 'weekly')),
+        'time':         str(data.get('time', '04:00')),
+        'day_of_week':  str(data.get('day_of_week', 'sun')),
+    }
+    _save_reboot_config(config)
+    try:
+        from carecall.scheduler import update_reboot_job
+        update_reboot_job(config)
+    except Exception as e:
+        current_app.logger.warning(f"Reboot scheduler update failed: {e}")
+    return jsonify({'success': True})
+
+
+@api_bp.route('/reboot/run', methods=['POST'])
+def reboot_now():
+    """Reboot the host immediately (manual trigger from the dashboard)."""
+    import subprocess, threading
+
+    def _do_reboot():
+        import time
+        time.sleep(0.5)  # let the HTTP response go out first
+        subprocess.Popen(['sudo', '/usr/sbin/reboot'])
+
+    threading.Thread(target=_do_reboot, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Rebooting…'})
+
+
 # ── System config helpers ──────────────────────────────────────────────────────
 
 def _load_system_config():
@@ -1722,6 +1760,24 @@ def _save_backup_config(config):
         _json.dump(config, f, indent=2)
 
 
+def _load_reboot_config():
+    defaults = {
+        'enabled': False, 'frequency': 'weekly',
+        'time': '04:00', 'day_of_week': 'sun',
+    }
+    try:
+        with open(_REBOOT_CONFIG_PATH) as f:
+            defaults.update(_json.load(f))
+    except Exception:
+        pass
+    return defaults
+
+
+def _save_reboot_config(config):
+    with open(_REBOOT_CONFIG_PATH, 'w') as f:
+        _json.dump(config, f, indent=2)
+
+
 def _do_backup(destination_dir):
     """Build a timestamped ZIP of all essential CareCall files."""
     ts = _dt.now().strftime('%Y%m%d_%H%M%S')
@@ -1734,6 +1790,7 @@ def _do_backup(destination_dir):
         ('.env',             os.path.join(_APP_ROOT, '.env')),
         ('carecall.service', os.path.join(_APP_ROOT, 'carecall.service')),
         ('backup_config.json', _BACKUP_CONFIG_PATH),
+        ('reboot_config.json', _REBOOT_CONFIG_PATH),
     ]
     uploads_dir = os.path.join(_APP_ROOT, 'uploads')
 

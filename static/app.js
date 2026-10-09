@@ -1573,6 +1573,8 @@ async function loadSettings() {
   // unmount, silently orphaning the old saved path).
   await loadBackupConfig();
   await loadBackupDrives();
+  // Load reboot schedule config
+  await loadRebootConfig();
   // Load call pause state
   await loadCallsPaused();
   // Load voice setting
@@ -2242,6 +2244,80 @@ async function restartService() {
       setTimeout(() => { status.textContent = ''; }, 4000);
     } catch (_) { /* still down */ }
   }, 1500);
+}
+
+// ── Scheduled Reboot ─────────────────────────────────────────────────────────
+
+async function loadRebootConfig() {
+  try {
+    const cfg = await api('GET', '/reboot/config');
+    document.getElementById('rebootEnabled').checked  = !!cfg.enabled;
+    document.getElementById('rebootFrequency').value  = cfg.frequency   || 'weekly';
+    document.getElementById('rebootTime').value       = cfg.time        || '04:00';
+    document.getElementById('rebootDayOfWeek').value  = cfg.day_of_week || 'sun';
+    _updateRebootScheduleUI();
+  } catch (e) {
+    console.warn('Could not load reboot config:', e);
+  }
+}
+
+function rebootScheduleChanged() {
+  _updateRebootScheduleUI();
+}
+
+function _updateRebootScheduleUI() {
+  const enabled = document.getElementById('rebootEnabled').checked;
+  document.getElementById('rebootScheduleFields').style.display = enabled ? 'flex' : 'none';
+  const freq = document.getElementById('rebootFrequency').value;
+  document.getElementById('rebootDayOfWeekGroup').style.display = freq === 'weekly' ? '' : 'none';
+}
+
+async function saveRebootConfig() {
+  const resultEl = document.getElementById('rebootSaveResult');
+  const config = {
+    enabled:     document.getElementById('rebootEnabled').checked,
+    frequency:   document.getElementById('rebootFrequency').value,
+    time:        document.getElementById('rebootTime').value,
+    day_of_week: document.getElementById('rebootDayOfWeek').value,
+  };
+  try {
+    await api('POST', '/reboot/config', config);
+    resultEl.innerHTML = '<span style="color:var(--green)">Saved</span>';
+    toast('Reboot schedule saved', 'success');
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--red)">${esc(e.message || 'Failed to save')}</span>`;
+  }
+  setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
+}
+
+async function rebootNow() {
+  const btn = document.getElementById('rebootNowBtn');
+  const status = document.getElementById('rebootNowStatus');
+  if (!confirm('Reboot the whole device now? CareCall (and everything else on the Pi) will be briefly unavailable.')) return;
+  btn.disabled = true;
+  status.textContent = 'Rebooting…';
+  try {
+    await api('POST', '/reboot/run');
+  } catch (_) {
+    // Expected — the server goes down before responding
+  }
+  status.textContent = 'Waiting for the device to come back online…';
+  const start = Date.now();
+  const poll = setInterval(async () => {
+    if (Date.now() - start > 180000) {
+      clearInterval(poll);
+      btn.disabled = false;
+      status.textContent = 'Timed out — check the device.';
+      return;
+    }
+    try {
+      await fetch('/api/status');
+      clearInterval(poll);
+      btn.disabled = false;
+      status.textContent = 'Back online.';
+      setTimeout(() => { status.textContent = ''; }, 4000);
+    } catch (_) { /* still down */ }
+  }, 3000);
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────

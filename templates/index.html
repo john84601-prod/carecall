@@ -614,6 +614,60 @@
             <span id="restartStatus" style="font-size:.85rem;color:var(--muted)"></span>
           </div>
 
+          <!-- ── Scheduled Reboot ─────────────────────────────────── -->
+          <h3>Scheduled Reboot</h3>
+          <p style="color:var(--muted);font-size:.85rem;margin-bottom:.6rem">
+            Periodically reboot the whole device (not just the CareCall service) — cheap insurance
+            against slow-creep issues on a long-running Pi. Skipped automatically if a call happens
+            to be in progress when it fires.
+          </p>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem">
+            <button class="btn-ghost btn-sm" id="rebootNowBtn" onclick="rebootNow()">⟳ Reboot Now</button>
+            <span id="rebootNowStatus" style="font-size:.85rem;color:var(--muted)"></span>
+          </div>
+          <div class="settings-row" style="display:flex;flex-direction:column;gap:.85rem">
+            <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.875rem">
+              <input type="checkbox" id="rebootEnabled" onchange="rebootScheduleChanged()">
+              <strong>Enable Scheduled Reboot</strong>
+            </label>
+
+            <div id="rebootScheduleFields" style="display:none;flex-direction:column;gap:.75rem">
+              <div class="row gap-md" style="flex-wrap:wrap;align-items:flex-end">
+                <div class="form-group" style="margin:0;min-width:120px">
+                  <label>Frequency</label>
+                  <select id="rebootFrequency" onchange="rebootScheduleChanged()">
+                    <option value="weekly">Weekly</option>
+                    <option value="daily">Daily</option>
+                  </select>
+                </div>
+                <div class="form-group" id="rebootDayOfWeekGroup" style="margin:0;min-width:120px">
+                  <label>Day of Week</label>
+                  <select id="rebootDayOfWeek">
+                    <option value="sun">Sunday</option>
+                    <option value="mon">Monday</option>
+                    <option value="tue">Tuesday</option>
+                    <option value="wed">Wednesday</option>
+                    <option value="thu">Thursday</option>
+                    <option value="fri">Friday</option>
+                    <option value="sat">Saturday</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;min-width:100px">
+                  <label>Time</label>
+                  <input type="time" id="rebootTime" value="04:00">
+                </div>
+              </div>
+              <div style="font-size:.82rem;color:var(--muted)">
+                Pick a time clear of any client's schedule and of the nightly backup/recording-cleanup jobs.
+              </div>
+            </div>
+
+            <div>
+              <button class="btn-primary btn-sm" onclick="saveRebootConfig()">Save Schedule</button>
+              <span id="rebootSaveResult" style="margin-left:.75rem;font-size:.82rem"></span>
+            </div>
+          </div>
+
           <h3>Test Call</h3>
           <p>Send a test call to verify your voice provider is configured correctly.</p>
           <div class="row gap-sm">
@@ -652,6 +706,7 @@
               <li><code>carecall.service</code> — systemd service definition</li>
               <li><code>uploads/</code> — all recorded audio files</li>
               <li><code>backup_config.json</code> — backup schedule settings</li>
+              <li><code>reboot_config.json</code> — scheduled reboot settings</li>
             </ul>
             <p style="margin-top:.5rem;color:var(--muted);font-size:.82rem">
               Application code is not included — it can be restored from GitHub.

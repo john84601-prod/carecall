@@ -31,6 +31,7 @@ def init_scheduler(app):
     _startup_missed_call_check()
     _register_sms_webhook()
     _init_backup_job()
+    _init_reboot_job()
     _register_recording_cleanup_job()
     _log_startup_event()
     _register_connectivity_check()
@@ -1041,3 +1042,89 @@ def _run_scheduled_backup():
             logger.info(f"Scheduled backup complete: {result['filename']} ({result['size']})")
     else:
         logger.error("Scheduled backup: no Flask app context available")
+
+
+# ── Scheduled Reboot ───────────────────────────────────────────────────────────
+#
+# A periodic clean reboot is cheap insurance against the kind of slow creep
+# (memory fragmentation, SD card wear, accumulated state) that can eventually
+# crash a long-running Pi. It does NOT substitute for external uptime
+# monitoring — if the host itself drops off the network (power/hardware
+# fault), nothing running on the host can detect or fix that.
+
+def _init_reboot_job():
+    """Load reboot schedule from reboot_config.json on startup."""
+    import json as _json
+    root = os.path.dirname(os.path.dirname(__file__))
+    config_path = os.path.join(root, 'reboot_config.json')
+    try:
+        with open(config_path) as f:
+            config = _json.load(f)
+        update_reboot_job(config)
+    except FileNotFoundError:
+        pass  # No config yet — no job to register
+    except Exception as e:
+        logger.warning(f"Could not init reboot job: {e}")
+
+
+def update_reboot_job(config):
+    """Register or remove the APScheduler cron job for a scheduled system reboot."""
+    if not _scheduler:
+        return
+    job_id = 'scheduled_reboot'
+    try:
+        _scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not config.get('enabled'):
+        return
+
+    try:
+        hour, minute = str(config.get('time', '04:00')).split(':')
+        hour, minute = int(hour), int(minute)
+    except Exception:
+        hour, minute = 4, 0
+
+    freq = config.get('frequency', 'weekly')
+    kwargs = dict(id=job_id, replace_existing=True, misfire_grace_time=3600)
+
+    if freq == 'daily':
+        _scheduler.add_job(
+            _run_scheduled_reboot, 'cron',
+            hour=hour, minute=minute, **kwargs
+        )
+    else:  # weekly
+        _scheduler.add_job(
+            _run_scheduled_reboot, 'cron',
+            day_of_week=config.get('day_of_week', 'sun'),
+            hour=hour, minute=minute, **kwargs
+        )
+    logger.info(f"Scheduled reboot job registered: {freq} at {hour:02d}:{minute:02d}")
+
+
+def _run_scheduled_reboot():
+    """APScheduler callback — reboots the host, unless a call is in progress
+    right now, in which case this cycle is skipped (not cancelled — it'll be
+    tried again next time the job fires) rather than cutting off a live call.
+    """
+    import subprocess
+
+    if _app:
+        with _app.app_context():
+            from carecall.models import WellnessSession, ReminderSession
+            live = (
+                WellnessSession.query.filter(
+                    WellnessSession.status.in_(['calling', 'escalating'])
+                ).first()
+                or ReminderSession.query.filter(ReminderSession.status == 'calling').first()
+            )
+            if live:
+                logger.warning("Scheduled reboot: a call is in progress — skipping this cycle")
+                return
+
+    logger.warning("Scheduled reboot: rebooting now")
+    try:
+        subprocess.Popen(['sudo', '/usr/sbin/reboot'])
+    except Exception as e:
+        logger.error(f"Scheduled reboot: failed to invoke reboot: {e}")
